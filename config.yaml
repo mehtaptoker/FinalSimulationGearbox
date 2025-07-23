@@ -1,0 +1,19 @@
+# System-wide configuration parameters
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  file: system.log
+
+random_seed: 42  # Global random seed for reproducibility
+
+geometry:
+  boundary_approximation_points: 100  # Points for boundary approximation
+  collision_threshold: 0.01  # Minimum clearance between gears
+
+rl_training:
+  max_steps: 10000
+  learning_rate: 0.0003
+  gamma: 0.99
+
+output:
+  base_dir: outputs  # Base output directory
+  save_interval: 1000  # Training checkpoint interval

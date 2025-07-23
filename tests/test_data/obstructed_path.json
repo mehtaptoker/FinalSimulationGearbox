@@ -1,0 +1,7 @@
+{
+  "boundaries": [
+    [[2, 2], [2, 4], [4, 4], [4, 2]]
+  ],
+  "input_shaft": [0, 0],
+  "output_shaft": [6, 6]
+}
