@@ -1,49 +1,68 @@
-# Pathfinder Academic Methods Documentation
+# A* Pathfinding Algorithm Implementation
 
-## A* Algorithm Implementation
+## Overview
+This document details the implementation of the A* (A-Star) pathfinding algorithm used to find optimal paths between input and output shafts in normalized coordinate space.
 
-The Pathfinder module implements the A* (A-Star) pathfinding algorithm to find the shortest path between two points while avoiding obstacles. A* is a best-first search algorithm that uses heuristics to guide its search efficiently.
+## Algorithm Pseudocode
+```
+function A*(start, goal)
+    openSet = priority queue containing start
+    cameFrom = empty map
+    gScore = map with default value of Infinity
+    gScore[start] = 0
+    fScore = map with default value of Infinity
+    fScore[start] = heuristic(start, goal)
 
-### Algorithm Overview
+    while openSet is not empty
+        current = node in openSet with lowest fScore
+        if current == goal
+            return reconstruct_path(cameFrom, current)
 
-1. **Initialization**:
-   - Create open and closed sets
-   - Add start node to open set with:
-     - g = 0 (cost from start to current node)
-     - h = heuristic estimate to end node
-     - f = g + h (total estimated cost)
+        openSet.remove(current)
+        for each neighbor of current
+            tentative_gScore = gScore[current] + distance(current, neighbor)
+            if tentative_gScore < gScore[neighbor]
+                cameFrom[neighbor] = current
+                gScore[neighbor] = tentative_gScore
+                fScore[neighbor] = gScore[neighbor] + heuristic(neighbor, goal)
+                if neighbor not in openSet
+                    openSet.add(neighbor)
 
-2. **Main Loop**:
-   - While open set is not empty:
-     - Select node with lowest f-score
-     - If current node is target, reconstruct path
-     - Move current node to closed set
-     - For each neighbor:
-       - Skip if in closed set or blocked by obstacle
-       - Calculate tentative g-score
-       - If better path found, update neighbor's scores and path
+    return failure (no path exists)
+```
 
-3. **Path Reconstruction**:
-   - Backtrack from target node using parent pointers
-   - Reverse path for start-to-target order
+## Implementation Details
 
-### Key Components
+### Heuristic Function
+The Euclidean distance is used as the heuristic:
+```python
+def heuristic(self, a, b):
+    return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
+```
 
-**Heuristic Function**:  
-Uses Euclidean distance between points:
-`h(n) = √((n.x - target.x)² + (n.y - target.y)²)`
+### Node Exploration
+- Uses a priority queue (min-heap) to efficiently retrieve the node with the lowest f-score
+- Explores neighbors in 8 directions (cardinal and diagonal)
+- Step size configurable (default 0.5 units in normalized space)
 
-**Neighbor Generation**:  
-Generates 8-direction neighbors (N, S, E, W, NE, NW, SE, SW)
+### Boundary Handling
+- Uses ray casting algorithm to determine if points are within workspace boundaries
+- Only considers points within boundaries as valid neighbors
 
-**Obstacle Avoidance**:  
-Checks if neighbor positions intersect with boundary polygons
+### Path Reconstruction
+- Backtraces from goal to start using the cameFrom dictionary
+- Reverses the path for correct start-to-goal order
 
-### Complexity
-- Time: O(b^d) where b is branching factor, d is solution depth
-- Space: O(b^d) for storing open/closed sets
+## Complexity Analysis
+- Time Complexity: O(b^d) where b is branching factor, d is depth
+- Space Complexity: O(n) for storing open/closed sets and path data
+- Practical performance depends on:
+  - Step size (smaller steps → more nodes)
+  - Workspace complexity
+  - Path length
 
-### Optimization Considerations
-1. **Heuristic Quality**: Euclidean distance is optimal for grid movement
-2. **Data Structures**: Uses dictionaries for O(1) lookups
-3. **Boundary Checking**: Simple point-in-polygon check for obstacles
+## Optimization Considerations
+1. **Step Size**: Larger steps reduce computation but may miss paths
+2. **Heuristic**: Euclidean distance provides good balance for continuous space
+3. **Data Structures**: Heap provides efficient min extraction
+4. **Boundary Check**: Ray casting is efficient for convex polygons

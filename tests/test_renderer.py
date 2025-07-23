@@ -1,83 +1,59 @@
-import unittest
-import os
+import pytest
 import tempfile
+import os
 from visualization.renderer import Renderer
-from common.data_models import SystemDefinition, Boundary, Point, Gear
+from common.data_models import SystemDefinition, Boundary, Point, Constraints
 
-class TestRenderer(unittest.TestCase):
-    def setUp(self):
-        self.renderer = Renderer()
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.output_path = os.path.join(self.temp_dir.name, "output.png")
-        
-        # Create sample boundary
-        self.boundary = Boundary(
-            vertices=(
-                Point(-40, -40),
-                Point(40, -40),
-                Point(40, 40),
-                Point(-40, 40)
-            )
+@pytest.fixture
+def sample_system():
+    """Create a sample SystemDefinition for testing."""
+    boundary = Boundary(points=[
+        Point(x=-50, y=-50),
+        Point(x=50, y=-50),
+        Point(x=50, y=50),
+        Point(x=-50, y=50)
+    ])
+    return SystemDefinition(
+        boundary=boundary,
+        input_shaft=Point(x=-30, y=0),
+        output_shaft=Point(x=30, y=0),
+        constraints=Constraints(
+            torque_ratio="1:1",
+            mass_space_ratio=0.5,
+            boundary_margin=5.0,
+            min_gear_size=10,
+            max_gear_size=50
         )
-        
-        # Create sample gears
-        self.gears = [
-            Gear(position=Point(0, 0), radius=10, teeth=20),
-            Gear(position=Point(20, 20), radius=8, teeth=16),
-            Gear(position=Point(-15, -15), radius=6, teeth=12)
-        ]
-        
-    def tearDown(self):
-        self.temp_dir.cleanup()
-        
-    def test_render_system_with_boundary_and_gears(self):
-        """Test rendering a system with boundary and gears"""
-        system = SystemDefinition(
-            name="Test System",
-            boundary=self.boundary,
-            gears=self.gears
-        )
-        
-        # Should run without errors
-        self.renderer.render_system(system, self.output_path)
-        self.assertTrue(os.path.exists(self.output_path))
-        self.assertGreater(os.path.getsize(self.output_path), 0)
-        
-    def test_render_system_with_boundary_only(self):
-        """Test rendering a system with boundary but no gears"""
-        system = SystemDefinition(
-            name="Empty System",
-            boundary=self.boundary,
-            gears=[]
-        )
-        
-        self.renderer.render_system(system, self.output_path)
-        self.assertTrue(os.path.exists(self.output_path))
-        self.assertGreater(os.path.getsize(self.output_path), 0)
-        
-    def test_render_system_with_gears_only(self):
-        """Test rendering a system with gears but no boundary"""
-        system = SystemDefinition(
-            name="No Boundary System",
-            boundary=None,
-            gears=self.gears
-        )
-        
-        self.renderer.render_system(system, self.output_path)
-        self.assertTrue(os.path.exists(self.output_path))
-        self.assertGreater(os.path.getsize(self.output_path), 0)
-        
-    def test_render_system_empty(self):
-        """Test rendering a completely empty system"""
-        system = SystemDefinition(
-            name="Empty System",
-            boundary=None,
-            gears=[]
-        )
-        
-        self.renderer.render_system(system, self.output_path)
-        self.assertTrue(os.path.exists(self.output_path))
-        self.assertGreater(os.path.getsize(self.output_path), 0)
+    )
 
-if __name__ == "__main__":
-    unittest.main()
+def test_render_system(sample_system):
+    """Test that render_system creates an output file."""
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+        output_path = tmp.name
+    
+    try:
+        Renderer.render_system(sample_system, output_path)
+        assert os.path.exists(output_path)
+        assert os.path.getsize(output_path) > 0
+    finally:
+        if os.path.exists(output_path):
+            os.remove(output_path)
+
+def test_render_empty_boundary():
+    """Test rendering with empty boundary points."""
+    system = SystemDefinition(
+        boundary=Boundary(points=[]),
+        input_shaft=Point(x=0, y=0),
+        output_shaft=Point(x=0, y=0),
+        constraints=Constraints(
+            torque_ratio="1:1",
+            mass_space_ratio=0.5,
+            boundary_margin=5.0,
+            min_gear_size=10,
+            max_gear_size=50
+        )
+    )
+    
+    with tempfile.NamedTemporaryFile(suffix='.png') as tmp:
+        with pytest.raises(ValueError):
+            Renderer.render_system(system, tmp.name)

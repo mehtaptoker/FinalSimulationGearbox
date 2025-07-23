@@ -1,36 +1,47 @@
-# Pathfinder Module
+# Pathfinding Module
 
-The Pathfinder module implements pathfinding functionality using the A* algorithm to find routes between input and output shafts while avoiding obstacles.
+## Pathfinder API
 
-## API Reference
+The `Pathfinder` class implements the A* algorithm for finding paths between input and output shafts in normalized coordinate space.
 
-### Pathfinder Class
+### Class Definition
+```python
+class Pathfinder:
+    def find_path(self, processed_data_path: str) -> list:
+        ...
+```
 
-#### `find_path(processed_data_path: str) -> List[Tuple[float, float]]`
+### Method: `find_path(processed_data_path)`
+- **Arguments**:
+  - `processed_data_path` (str): Path to processed JSON file containing normalized space data
+- **Returns**:
+  - List of [x, y] points representing the path in normalized space, or None if no path exists
 
-Finds a path from input shaft to output shaft using A* algorithm.
+### Input Data Structure
+The input JSON file must contain a `normalized_space` object with:
+- `boundaries`: List of [x,y] points defining workspace boundaries
+- `input_shaft`: {x, y} coordinates of input shaft
+- `output_shaft`: {x, y} coordinates of output shaft
 
-**Parameters:**
-- `processed_data_path`: Path to JSON file containing:
-  - `boundaries`: List of obstacle polygons (each polygon is a list of points)
-  - `input_shaft`: Starting point [x, y]
-  - `output_shaft`: Target point [x, y]
-
-**Returns:**
-- List of points representing the path from input to output shaft
-
-**Raises:**
-- `ValueError` if no valid path is found
+Example structure:
+```json
+{
+  "normalized_space": {
+    "boundaries": [[x1,y1], [x2,y2], ...],
+    "input_shaft": {"x": x_val, "y": y_val},
+    "output_shaft": {"x": x_val, "y": y_val}
+  }
+}
+```
 
 ### Usage Example
-
 ```python
 from pathfinding.finder import Pathfinder
 
 finder = Pathfinder()
-path = finder.find_path("data/intermediate/Example1.json")
-print("Path found:", path)
-```
+path = finder.find_path("data/intermediate/Example1_processed.json")
 
-## Dependencies
-- Python standard libraries: `json`, `math`, `typing`
+if path:
+    print(f"Path found with {len(path)} points")
+else:
+    print("No path found")

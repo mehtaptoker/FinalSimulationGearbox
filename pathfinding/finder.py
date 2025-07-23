@@ -1,152 +1,158 @@
 import json
 import math
-from typing import List, Tuple, Dict, Any, Set
+from heapq import heappop, heappush
 
 class Pathfinder:
     def __init__(self):
-        self.closed_set: Set[Tuple[float, float]] = set()
+        self.output_shaft = None  # Store output shaft for line-of-sight checks
 
-    def find_path(self, processed_data_path: str) -> List[Tuple[float, float]]:
+    def find_path(self, processed_data_path):
         """
-        Find a path from input shaft to output shaft using A* algorithm
+        Find path from input shaft to output shaft using A* algorithm
         
         Args:
-            processed_data_path: Path to JSON file containing:
-                - boundaries: List of obstacle polygons
-                - input_shaft: Starting point (x, y)
-                - output_shaft: Target point (x, y)
-        
+            processed_data_path (str): Path to processed JSON file
+            
         Returns:
-            List of points representing the path
+            list: Path as list of [x, y] points in normalized space
         """
         # Load and parse JSON data
         with open(processed_data_path, 'r') as f:
             data = json.load(f)
+            
+        # Extract normalized space data (handle both real data and test data formats)
+        if 'normalized_space' in data:
+            norm_space = data['normalized_space']
+            boundaries = norm_space['boundaries']
+            input_shaft = (norm_space['input_shaft']['x'], norm_space['input_shaft']['y'])
+            output_shaft = (norm_space['output_shaft']['x'], norm_space['output_shaft']['y'])
+        else:
+            boundaries = data['boundaries']
+            input_shaft = (data['input_shaft'][0], data['input_shaft'][1])
+            output_shaft = (data['output_shaft'][0], data['output_shaft'][1])
+            
+        # Store output shaft for line-of-sight checks
+        self.output_shaft = output_shaft
         
-        # Extract boundaries - stored as a single polygon with multiple points
-        raw_boundary = data.get('boundaries', [])
-        boundaries = [raw_boundary] if raw_boundary else []
-        
-        input_shaft = (float(data['input_shaft']['x']), float(data['input_shaft']['y']))
-        output_shaft = (float(data['output_shaft']['x']), float(data['output_shaft']['y']))
+        # Debug output
+        print(f"Input shaft: {input_shaft}")
+        print(f"Output shaft: {output_shaft}")
+        print(f"Boundaries: {boundaries}")
         
         # A* implementation
-        open_set: Set[Tuple[float, float]] = {input_shaft}
-        came_from: Dict[Tuple[float, float], Tuple[float, float]] = {}
-        g_score: Dict[Tuple[float, float], float] = {input_shaft: 0}
-        f_score: Dict[Tuple[float, float], float] = {input_shaft: self._heuristic(input_shaft, output_shaft)}
-        self.closed_set = set()
+        open_set = []
+        closed_set = set()
         
-        print(f"🚀 Starting pathfinding from {input_shaft} to {output_shaft}")
-        print(f"Workspace boundary: {boundaries[0] if boundaries else 'None'}")
-        print(f"Obstacles: {boundaries[1:]}")
+        # Add start node
+        heappush(open_set, (0, input_shaft))
+        came_from = {}
+        g_score = {input_shaft: 0}
+        f_score = {input_shaft: self.heuristic(input_shaft, output_shaft)}
+        
+        # Debug: count iterations
+        iterations = 0
         
         while open_set:
-            current = min(open_set, key=lambda p: f_score.get(p, float('inf')))
-            print(f"🔍 Current node: {current}, F-score: {f_score.get(current, float('inf'))}")
+            iterations += 1
+            _, current = heappop(open_set)
             
             if current == output_shaft:
-                print("🎯 Reached target node")
-                return self._reconstruct_path(came_from, current)
+                print(f"Path found after exploring {iterations} nodes")
+                return self.reconstruct_path(came_from, current)
+                
+            closed_set.add(current)
             
-            open_set.remove(current)
-            self.closed_set.add(current)
-            
-            neighbors = self._get_neighbors(current, boundaries)
-            print(f"  ➕ Found {len(neighbors)} neighbors: {neighbors}")
-            
-            for neighbor in neighbors:
-                if neighbor in self.closed_set:
+            for neighbor in self.get_neighbors(current, boundaries):
+                if neighbor in closed_set:
                     continue
                     
-                # Use higher cost for diagonal moves (sqrt(2) instead of 1)
-                move_cost = 1.0 if current[0] == neighbor[0] or current[1] == neighbor[1] else math.sqrt(2)
-                tentative_g = g_score[current] + move_cost
+                tentative_g = g_score[current] + self.distance(current, neighbor)
                 
-                if tentative_g < g_score.get(neighbor, float('inf')):
+                if neighbor not in [i[1] for i in open_set] or tentative_g < g_score.get(neighbor, float('inf')):
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_g
-                    f_score[neighbor] = tentative_g + self._heuristic(neighbor, output_shaft)
-                    if neighbor not in open_set:
-                        open_set.add(neighbor)
-        
-        raise ValueError("No valid path found")
+                    f_score[neighbor] = tentative_g + self.heuristic(neighbor, output_shaft)
+                    heappush(open_set, (f_score[neighbor], neighbor))
+                    
+        print(f"Explored {iterations} nodes, no path found")
+        return None  # No path found
 
-    def _heuristic(self, a: Tuple[float, float], b: Tuple[float, float]) -> float:
+    def heuristic(self, a, b):
         """Euclidean distance heuristic"""
         return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
-
-    def _distance(self, a: Tuple[float, float], b: Tuple[float, float]) -> float:
-        """Actual distance between two points"""
-        dx = abs(a[0] - b[0])
-        dy = abs(a[1] - b[1])
-        return math.sqrt(dx*dx + dy*dy)
-
-    def _get_neighbors(self, point: Tuple[float, float], boundaries: List[List[Tuple[float, float]]]) -> List[Tuple[float, float]]:
-        """Get valid neighboring points (avoiding boundaries)"""
-        directions = [(0, 1), (1, 0), (0, -1), (-1, 0),
-                      (1, 1), (1, -1), (-1, 1), (-1, -1)]
+        
+    def distance(self, a, b):
+        """Distance between two points"""
+        return self.heuristic(a, b)
+        
+    def get_neighbors(self, point, boundaries, step=0.5):
+        """Generate valid neighbor points within boundaries"""
         neighbors = []
-        for dx, dy in directions:
+        directions = [
+            (step, 0), (-step, 0), (0, step), (0, -step),
+            (step, step), (step, -step), (-step, step), (-step, -step)
+        ]
+        
+        # Add larger diagonal steps for efficiency
+        large_step = step * 2
+        large_directions = [
+            (large_step, large_step), (large_step, -large_step),
+            (-large_step, large_step), (-large_step, -large_step)
+        ]
+        
+        # Check direct line of sight to goal as a potential shortcut
+        if self.has_line_of_sight(point, self.output_shaft, boundaries):
+            neighbors.append(self.output_shaft)
+            
+        for dx, dy in directions + large_directions:
             neighbor = (point[0] + dx, point[1] + dy)
-            
-            # Check if point is inside any boundary
-            inside_boundary = False
-        # The first boundary is the workspace (valid area)
-        if boundaries:
-            workspace = boundaries[0]
-            float_workspace = [(float(pt[0]), float(pt[1])) for pt in workspace]
-            
-            # Point must be inside workspace to be valid
-            if not self._point_in_polygon(neighbor, float_workspace):
-                print(f"    ❌ Neighbor {neighbor} is outside workspace")
-                return neighbors
+            if self.is_within_boundaries(neighbor, boundaries):
+                neighbors.append(neighbor)
                 
-        # Check if point is inside any obstacle (boundaries after the first)
-        for obstacle in boundaries[1:]:
-            float_obstacle = [(float(pt[0]), float(pt[1])) for pt in obstacle]
-            if self._point_in_polygon(neighbor, float_obstacle):
-                print(f"    ❌ Neighbor {neighbor} is inside obstacle {obstacle}")
-                return neighbors
-                
-        # If we get here, the point is valid
-        print(f"    ✅ Neighbor {neighbor} is valid")
-        neighbors.append(neighbor)
         return neighbors
-
-    def _point_in_polygon(self, point: Tuple[float, float], polygon: List[Tuple[float, float]]) -> bool:
-        """Determine if a point is inside a polygon using ray casting algorithm"""
+        
+    def has_line_of_sight(self, a, b, boundaries):
+        """Check if there's a direct path between two points"""
+        # Simple check - midpoint in boundaries (for convex shapes)
+        mid = ((a[0] + b[0])/2, (a[1] + b[1])/2)
+        return self.is_within_boundaries(mid, boundaries)
+        
+    def is_within_boundaries(self, point, boundaries):
+        """Check if point is within polygon boundaries using ray casting"""
+        if not boundaries:
+            # If no boundaries defined, consider entire space valid
+            return True
+            
         x, y = point
-        n = len(polygon)
+        n = len(boundaries)
         inside = False
-        p1x, p1y = polygon[0]
+        
+        # Get first boundary point
+        p1 = boundaries[0]
+        p1x, p1y = p1[0], p1[1]
+        
         for i in range(1, n + 1):
-            p2x, p2y = polygon[i % n]
-            # Check if point is on the vertex
-            if (x, y) == (p1x, p1y) or (x, y) == (p2x, p2y):
-                return True
-                
-            # Check if point is on horizontal edge
-            if p1y == p2y and y == p1y and min(p1x, p2x) <= x <= max(p1x, p2x):
-                return True
-                
-            # Check if point is on vertical edge
-            if p1x == p2x and x == p1x and min(p1y, p2y) <= y <= max(p1y, p2y):
-                return True
-                
-            # Check for intersection
-            if (p1y > y) != (p2y > y):
-                xinters = (p2x - p1x) * (y - p1y) / (p2y - p1y) + p1x
-                if x < xinters:
-                    inside = not inside
+            p2 = boundaries[i % n]
+            p2x, p2y = p2[0], p2[1]
+            
+            if y > min(p1y, p2y):
+                if y <= max(p1y, p2y):
+                    if x <= max(p1x, p2x):
+                        if p1y != p2y:
+                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                        if p1x == p2x or x <= xinters:
+                            inside = not inside
             p1x, p1y = p2x, p2y
+            
         return inside
-
-    def _reconstruct_path(self, came_from: Dict[Tuple[float, float], Tuple[float, float]], 
-                         current: Tuple[float, float]) -> List[Tuple[float, float]]:
-        """Reconstruct path from came_from dictionary"""
-        path = [current]
+        
+    def reconstruct_path(self, came_from, current):
+        """Reconstruct path from start to current point"""
+        path = [list(current)]
         while current in came_from:
             current = came_from[current]
-            path.append(current)
-        return path[::-1]
+            path.append(list(current))
+        path.reverse()
+        return path
+
+    

@@ -51,11 +51,49 @@ class Processor:
         boundary_contours, _ = cv2.findContours(edged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         boundary = Processor._approximate_contour(max(boundary_contours, key=cv2.contourArea)) if boundary_contours else []
         
+        # Calculate bounding box of all features
+        all_points = []
+        if input_center:
+            all_points.append(input_center)
+        if output_center:
+            all_points.append(output_center)
+        if boundary:
+            all_points.extend(boundary)
+        
+        all_points = np.array(all_points)
+        min_x, min_y = np.min(all_points, axis=0)
+        max_x, max_y = np.max(all_points, axis=0)
+        
+        # Calculate normalization transform
+        scale = 100 / max(max_x - min_x, max_y - min_y)
+        offset_x = -((min_x + max_x) / 2) * scale
+        offset_y = -((min_y + max_y) / 2) * scale
+        
+        def normalize_point(x, y):
+            return x * scale + offset_x, y * scale + offset_y
+        
+        # Normalize coordinates
+        normalized_boundary = [normalize_point(x, y) for x, y in boundary] if boundary else []
+        normalized_input = normalize_point(*input_center) if input_center else None
+        normalized_output = normalize_point(*output_center) if output_center else None
+        
         # Create and save intermediate representation
         intermediate = {
-            "boundaries": boundary,
-            "input_shaft": {"x": int(input_center[0]), "y": int(input_center[1])} if input_center else None,
-            "output_shaft": {"x": int(output_center[0]), "y": int(output_center[1])} if output_center else None
+            "pixel_space": {
+                "boundaries": boundary,
+                "input_shaft": {"x": int(input_center[0]), "y": int(input_center[1])} if input_center else None,
+                "output_shaft": {"x": int(output_center[0]), "y": int(output_center[1])} if output_center else None
+            },
+            "normalized_space": {
+                "boundaries": normalized_boundary,
+                "input_shaft": {"x": normalized_input[0], "y": normalized_input[1]} if normalized_input else None,
+                "output_shaft": {"x": normalized_output[0], "y": normalized_output[1]} if normalized_output else None
+            },
+            "normalization_params": {
+                "scale": scale,
+                "offset_x": offset_x,
+                "offset_y": offset_y
+            }
         }
         
         os.makedirs(os.path.dirname(output_path), exist_ok=True)

@@ -1,52 +1,66 @@
-# Environment Representation from Multimodal Engineering Inputs
+# Environment Representation and Normalization from Multimodal Engineering Inputs
 
 ## Methodology
-This document describes the image processing pipeline for converting engineering diagrams into structured environment representations.
 
 ### Image Processing Pipeline
-1. **Input Acquisition**: Load PNG diagram containing:
-   - Mechanical boundary (white outline)
-   - Input shaft (red circle)
-   - Output shaft (green circle)
 
-2. **Color-space Conversion**:
-   - Convert RGB to HSV for robust color detection
-   - HSV provides better separation of color components
+1. **Input Loading**:
+   - RGB image loaded using OpenCV
+   - Converted to HSV color space for better color separation
 
-3. **Shaft Detection**:
+2. **Shaft Detection**:
    - **Input Shaft (Red)**:
      - HSV range: [0-10, 120-255, 70-255]
-     - Morphological operations to reduce noise
-     - Contour detection and center calculation using image moments
+     - Contour detection with RETR_EXTERNAL flag
+     - Center calculated using image moments
    - **Output Shaft (Green)**:
      - HSV range: [35-85, 120-255, 70-255]
      - Same processing as input shaft
 
-4. **Boundary Extraction**:
+3. **Boundary Detection**:
    - Convert to grayscale
-   - Apply binary thresholding to isolate boundary
-   - Find external contours
-   - Approximate contour using Ramer-Douglas-Peucker algorithm:
+   - Apply Gaussian blur (5x5 kernel)
+   - Edge detection using Canny algorithm (50-150 thresholds)
+   - Contour approximation using Ramer-Douglas-Peucker algorithm
      - ε = 0.01 * contour perimeter
-     - Reduces points while preserving shape
 
-5. **Data Integration**:
-   - Combine geometric features with JSON constraints
-   - Output structured intermediate representation
+### Coordinate Normalization
 
-### Algorithm Selection
-- **Color-based Detection**: Chosen for simplicity and effectiveness with distinct markers
-- **Ramer-Douglas-Peucker**: Optimal for polygonal approximation of smooth curves
-- **Image Moments**: Provides accurate centroid calculation for circular features
+All geometric features are normalized to a canonical [-50, 50] range:
 
-### Validation
-- Unit tests verify:
-  - Correct shaft positioning (within 2px tolerance)
-  - Boundary point count matches expected shape complexity
-  - Robust handling of missing/invalid files
-- Visual inspection of intermediate files
+1. **Bounding Box Calculation**:
+   - Find min/max coordinates across all features (shafts + boundary)
 
-### Limitations
-- Requires distinct color markers (red/green)
-- Sensitive to lighting conditions
-- Assumes single input/output shafts
+2. **Normalization Transform**:
+   - Scaling factor (s):
+     ```
+     s = 100 / max(width, height)
+     ```
+     where width = max_x - min_x, height = max_y - min_y
+   - Translation offsets (t_x, t_y):
+     ```
+     t_x = -((min_x + max_x) / 2) * s
+     t_y = -((min_y + max_y) / 2) * s
+     ```
+
+3. **Coordinate Transformation**:
+   For each point (x, y):
+   ```
+   x_norm = x * s + t_x
+   y_norm = y * s + t_y
+   ```
+
+### Importance of Normalization
+
+1. **Model Generalization**:
+   - Removes dependence on absolute image dimensions
+   - Ensures consistent scale across different input images
+   - Makes learned features scale-invariant
+
+2. **Numerical Stability**:
+   - Bounded range prevents extreme values
+   - Helps with gradient-based optimization
+
+3. **Physical Interpretation**:
+   - Normalized space can be mapped to real-world units
+   - Enables consistent physical constraints application
