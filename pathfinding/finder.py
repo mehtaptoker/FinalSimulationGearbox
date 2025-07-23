@@ -3,156 +3,131 @@ import math
 from heapq import heappop, heappush
 
 class Pathfinder:
-    def __init__(self):
-        self.output_shaft = None  # Store output shaft for line-of-sight checks
-
+    """
+    Finds a path between two points within a polygon using a grid-based A* search.
+    """
     def find_path(self, processed_data_path):
-        """
-        Find path from input shaft to output shaft using A* algorithm
-        
-        Args:
-            processed_data_path (str): Path to processed JSON file
+            # 1. Load and parse the data
+            with open(processed_data_path, 'r') as f:
+                data = json.load(f)['normalized_space']
             
-        Returns:
-            list: Path as list of [x, y] points in normalized space
-        """
-        # Load and parse JSON data
-        with open(processed_data_path, 'r') as f:
-            data = json.load(f)
+            boundaries = [tuple(p) for p in data['boundaries']]
+            start_node = (data['input_shaft']['x'], data['input_shaft']['y'])
+            end_node = (data['output_shaft']['x'], data['output_shaft']['y'])
             
-        # Extract normalized space data (handle both real data and test data formats)
-        if 'normalized_space' in data:
-            norm_space = data['normalized_space']
-            boundaries = norm_space['boundaries']
-            input_shaft = (norm_space['input_shaft']['x'], norm_space['input_shaft']['y'])
-            output_shaft = (norm_space['output_shaft']['x'], norm_space['output_shaft']['y'])
-        else:
-            boundaries = data['boundaries']
-            input_shaft = (data['input_shaft'][0], data['input_shaft'][1])
-            output_shaft = (data['output_shaft'][0], data['output_shaft'][1])
-            
-        # Store output shaft for line-of-sight checks
-        self.output_shaft = output_shaft
-        
-        # Debug output
-        print(f"Input shaft: {input_shaft}")
-        print(f"Output shaft: {output_shaft}")
-        print(f"Boundaries: {boundaries}")
-        
-        # A* implementation
-        open_set = []
-        closed_set = set()
-        
-        # Add start node
-        heappush(open_set, (0, input_shaft))
-        came_from = {}
-        g_score = {input_shaft: 0}
-        f_score = {input_shaft: self.heuristic(input_shaft, output_shaft)}
-        
-        # Debug: count iterations
-        iterations = 0
-        
-        while open_set:
-            iterations += 1
-            _, current = heappop(open_set)
-            
-            if current == output_shaft:
-                print(f"Path found after exploring {iterations} nodes")
-                return self.reconstruct_path(came_from, current)
+            # 2. Verify start/end points are inside the container
+            if not self._is_inside(start_node, boundaries):
+                print("Error: Start point is outside the boundary container.")
+                return None
+            if not self._is_inside(end_node, boundaries):
+                print("Error: End point is outside the boundary container.")
+                return None
                 
-            closed_set.add(current)
-            
-            for neighbor in self.get_neighbors(current, boundaries):
-                if neighbor in closed_set:
-                    continue
-                    
-                tentative_g = g_score[current] + self.distance(current, neighbor)
-                
-                if neighbor not in [i[1] for i in open_set] or tentative_g < g_score.get(neighbor, float('inf')):
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g
-                    f_score[neighbor] = tentative_g + self.heuristic(neighbor, output_shaft)
-                    heappush(open_set, (f_score[neighbor], neighbor))
-                    
-        print(f"Explored {iterations} nodes, no path found")
-        return None  # No path found
+            # 3. Initialize A* search with consistent, rounded keys
+            step_size = 0.5
+            start_node_key = (round(start_node[0], 4), round(start_node[1], 4))
 
-    def heuristic(self, a, b):
-        """Euclidean distance heuristic"""
-        return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
-        
-    def distance(self, a, b):
-        """Distance between two points"""
-        return self.heuristic(a, b)
-        
-    def get_neighbors(self, point, boundaries, step=0.5):
-        """Generate valid neighbor points within boundaries"""
-        neighbors = []
-        directions = [
-            (step, 0), (-step, 0), (0, step), (0, -step),
-            (step, step), (step, -step), (-step, step), (-step, -step)
-        ]
-        
-        # Add larger diagonal steps for efficiency
-        large_step = step * 2
-        large_directions = [
-            (large_step, large_step), (large_step, -large_step),
-            (-large_step, large_step), (-large_step, -large_step)
-        ]
-        
-        # Check direct line of sight to goal as a potential shortcut
-        if self.has_line_of_sight(point, self.output_shaft, boundaries):
-            neighbors.append(self.output_shaft)
+            open_set = [(0, start_node)] # Heap stores (f_score, original_node_tuple)
+            came_from = {}
             
-        for dx, dy in directions + large_directions:
-            neighbor = (point[0] + dx, point[1] + dy)
-            if self.is_within_boundaries(neighbor, boundaries):
-                neighbors.append(neighbor)
+            g_score = {start_node_key: 0}
+            f_score = {start_node_key: self._distance(start_node, end_node)}
+
+            while open_set:
+                _, current = heappop(open_set)
                 
-        return neighbors
-        
-    def has_line_of_sight(self, a, b, boundaries):
-        """Check if there's a direct path between two points"""
-        # Simple check - midpoint in boundaries (for convex shapes)
-        mid = ((a[0] + b[0])/2, (a[1] + b[1])/2)
-        return self.is_within_boundaries(mid, boundaries)
-        
-    def is_within_boundaries(self, point, boundaries):
-        """Check if point is within polygon boundaries using ray casting"""
-        if not boundaries:
-            # If no boundaries defined, consider entire space valid
-            return True
+                # Create a rounded key for dictionary lookups
+                current_key = (round(current[0], 4), round(current[1], 4))
+
+                # Check if we have reached the goal
+                if self._distance(current, end_node) < step_size:
+                    path = self._reconstruct_path(came_from, current)
+                    path.append(list(end_node))
+                    return path
+
+                # Explore neighbors
+                for neighbor in self._get_neighbors(current, boundaries, end_node, step_size):
+                    # Always use the rounded key to access g_score
+                    tentative_g_score = g_score[current_key] + self._distance(current, neighbor)
+                    
+                    neighbor_key = (round(neighbor[0], 4), round(neighbor[1], 4))
+
+                    if tentative_g_score < g_score.get(neighbor_key, float('inf')):
+                        came_from[neighbor_key] = current
+                        g_score[neighbor_key] = tentative_g_score
+                        f_score[neighbor_key] = tentative_g_score + self._distance(neighbor, end_node)
+                        heappush(open_set, (f_score[neighbor_key], neighbor))
             
+            print("No path found after exploring all possibilities.")
+            return None
+
+    def _get_neighbors(self, point, boundaries, goal, step):
+        """Generates valid neighbors for a point."""
+        neighbors = []
+        
+        # Optimization: Check for a direct line of sight to the goal
+        if self._has_line_of_sight(point, goal, boundaries, step):
+            neighbors.append(goal)
+            return neighbors # If we can see the goal, that's the only neighbor we need
+
+        # Standard 8-directional grid neighbors
+        for dx in [-step, 0, step]:
+            for dy in [-step, 0, step]:
+                if dx == 0 and dy == 0:
+                    continue
+                neighbor = (point[0] + dx, point[1] + dy)
+                if self._is_inside(neighbor, boundaries):
+                    neighbors.append(neighbor)
+        return neighbors
+
+    def _has_line_of_sight(self, p1, p2, boundaries, resolution):
+        """
+        Approximates line of sight by checking intermediate points.
+        Returns True if all points on the line segment are inside the polygon.
+        """
+        dist = self._distance(p1, p2)
+        if dist < resolution:
+            return True
+        
+        num_checks = int(dist / resolution)
+        dx = (p2[0] - p1[0]) / num_checks
+        dy = (p2[1] - p1[1]) / num_checks
+
+        for i in range(1, num_checks):
+            intermediate_point = (p1[0] + i * dx, p1[1] + i * dy)
+            if not self._is_inside(intermediate_point, boundaries):
+                return False
+        return True
+
+    def _is_inside(self, point, boundaries):
+        """Checks if a point is inside a polygon using the Ray Casting algorithm."""
         x, y = point
         n = len(boundaries)
         inside = False
-        
-        # Get first boundary point
-        p1 = boundaries[0]
-        p1x, p1y = p1[0], p1[1]
-        
-        for i in range(1, n + 1):
-            p2 = boundaries[i % n]
-            p2x, p2y = p2[0], p2[1]
-            
+        p1x, p1y = boundaries[0]
+        for i in range(n + 1):
+            p2x, p2y = boundaries[i % n]
             if y > min(p1y, p2y):
                 if y <= max(p1y, p2y):
                     if x <= max(p1x, p2x):
                         if p1y != p2y:
-                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
-                        if p1x == p2x or x <= xinters:
-                            inside = not inside
+                            x_intersect = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                            if p1x == p2x or x <= x_intersect:
+                                inside = not inside
             p1x, p1y = p2x, p2y
-            
         return inside
-        
-    def reconstruct_path(self, came_from, current):
-        """Reconstruct path from start to current point"""
+
+    def _distance(self, p1, p2):
+        """Calculates Euclidean distance."""
+        return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+
+    def _reconstruct_path(self, came_from, current):
+        """Builds the final path from the A* result."""
         path = [list(current)]
-        while current in came_from:
-            current = came_from[current]
+        current_key = (round(current[0], 4), round(current[1], 4))
+        while current_key in came_from:
+            current = came_from[current_key]
+            current_key = (round(current[0], 4), round(current[1], 4))
             path.append(list(current))
         path.reverse()
         return path
-
-    
