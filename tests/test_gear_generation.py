@@ -158,4 +158,4 @@ def test_run_full_pipeline(fn='Example1'):
     print(f"Visualization saved to: {output_image_path}")
 
 if __name__ == "__main__":
-    test_run_full_pipeline("Example3")
+    test_run_full_pipeline("Example1")

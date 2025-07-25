@@ -8,23 +8,34 @@ from .base_agent import BaseAgent
 class ActorCritic(nn.Module):
     """Actor-Critic network for PPO."""
     
-    def __init__(self, state_dim, action_dim):
+    def __init__(self, state_dim: int, action_dims: list[int]):
         super(ActorCritic, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 256)
-        self.fc2 = nn.Linear(256, 128)
+
+        # Shared layers to process the state
+        self.shared_layers = nn.Sequential(
+            nn.Linear(state_dim, 128),
+            nn.Tanh(),
+            nn.Linear(128, 128),
+            nn.Tanh()
+        )
         
-        # Actor head
-        self.actor = nn.Linear(128, action_dim)
-        
-        # Critic head
-        self.critic = nn.Linear(128, 1)
-        
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        action_probs = F.softmax(self.actor(x), dim=-1)
-        state_value = self.critic(x)
-        return action_probs, state_value
+        # Actor requires two separate heads for MultiDiscrete action space
+        self.actor_head1 = nn.Linear(128, action_dims[0])
+        self.actor_head2 = nn.Linear(128, action_dims[1])
+
+        # Critic head for state-value estimation
+        self.critic_head = nn.Linear(128, 1)
+
+    def forward(self, state):
+        """
+        Forward pass through the network.
+        Returns logits for each action head and the state value.
+        """
+        x = self.shared_layers(state)
+        action_logits1 = self.actor_head1(x)
+        action_logits2 = self.actor_head2(x)
+        state_value = self.critic_head(x)
+        return action_logits1, action_logits2, state_value
 
 class PPOAgent(BaseAgent):
     """Proximal Policy Optimization (PPO) agent implementation."""

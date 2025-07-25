@@ -4,6 +4,7 @@ from typing import List, Tuple, Dict, Any
 from common.data_models import SystemDefinition, Boundary, Point, Constraints, Gear
 import numpy as np
 import json
+import os
 
 class Renderer:
     @staticmethod
@@ -92,3 +93,33 @@ class Renderer:
         
         # Render the system with optional path and gears
         Renderer.render_system(system, output_path, path, gears)
+
+if __name__ == "__main__":
+    fn = 'Example1'
+    
+    CONFIG = {
+        "INPUT_DIR": "../data",
+        "INTERMEDIATE_DIR": "../data/intermediate",
+        "EXAMPLE_NAME": f"{fn}",
+        "module": 1.0,
+        "clearance_margin": 1.0,
+        "initial_gear_teeth": 20,
+        "OUTPUT_DIR": "../output",
+    }
+    processed_json_path = os.path.join(CONFIG["INTERMEDIATE_DIR"], f"{CONFIG['EXAMPLE_NAME']}_processed.json")
+    path_json_path = os.path.join(CONFIG['OUTPUT_DIR'], 'path.json')
+    path_image_path = os.path.join(CONFIG['OUTPUT_DIR'], 'path.png')
+    output_dir = os.path.join(CONFIG["OUTPUT_DIR"], CONFIG["EXAMPLE_NAME"])
+    output_image_path = os.path.join(output_dir, "gear_train_result.png")
+    gear_layout_path = os.path.join(output_dir, "gear_layout.json")
+
+    with open(gear_layout_path, 'r') as f:
+        gears_data = json.load(f)
+
+    gears_for_renderer = [Gear.from_json(g) for g in gears_data]
+
+    Renderer.render_processed_data(
+        processed_data_path=processed_json_path,
+        output_path=output_image_path,
+        gears=gears_for_renderer
+    )
