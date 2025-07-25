@@ -53,8 +53,9 @@ class Renderer:
         
         # Plot path if provided
         if path:
-            path_x = [p[0] for p in path]
-            path_y = [p[1] for p in path]
+            # print(path)
+            path_x = [p.x for p in path]
+            path_y = [p.y for p in path]
             ax.plot(path_x, path_y, 'm-', linewidth=1, alpha=0.7, label='Path')
         
         # Set plot properties

@@ -1,57 +1,70 @@
 import math
 from typing import List, Tuple
 from common.data_models import Point
+from gear_generator.common import GearSet
+from gear_generator.factory import GearFactory
 
 
 # from common.data_models import Gear
 
 class GearTrainSimulator:
-    def __init__(self, path: List[tuple], input_shaft: Tuple[float, float],
-                 output_shaft: Tuple[float, float], boundaries: List[List[float]],
-                 gear_factory, clearance_margin: float = 1.0):
+    def __init__(self, path: List[list[float]], input_shaft: Tuple[float, float],
+                 output_shaft: Tuple[float, float], boundaries: List[list[float]],
+                 gear_factory: GearFactory, clearance_margin: float = 1.0):
         
         self.path = [Point(x=p[0], y=p[1]) for p in path]
+        # self.path = path
         self.input_shaft = Point(x=input_shaft[0], y=input_shaft[1])
         self.output_shaft = Point(x=output_shaft[0], y=output_shaft[1])
         self.boundaries = [Point(x=p[0], y=p[1]) for p in boundaries]
         self.gear_factory = gear_factory
         self.clearance_margin = clearance_margin
 
-        self.gears = []
-        self.last_gear = None
-        self.distance_on_path = 0.0 # NEW: Tracks progress along the path
+        self.gears: List[GearSet] = []
+        self.last_gear: GearSet = None
+        self.input_gear: GearSet = None  # NEW
+        self.output_gear: GearSet = None # NEW
+        self.distance_on_path: float = 0.0
 
-    def reset(self, initial_gear_teeth: int = 20):
+    def reset(self, initial_gear_teeth: int = None): # initial_gear_teeth is no longer used
         self.gears = []
         
-        first_gear = self.gear_factory.create_gear(
-            gear_id='gear_0',
+        # 1. Calculate max possible radius at input and output shafts
+        max_input_radius = self._distance_to_boundary(self.input_shaft, self.boundaries) - self.clearance_margin
+        max_output_radius = self._distance_to_boundary(self.output_shaft, self.boundaries) - self.clearance_margin
+
+        if max_input_radius <= 0 or max_output_radius <= 0:
+            return self._get_state(), 0, True, {"error": "Input/Output shaft too close to boundary to place any gear."}
+
+        # 2. Create the largest possible gears
+        self.input_gear = self.gear_factory.create_gear_from_diameter(
+            gear_id='gear_input',
             center=(self.input_shaft.x, self.input_shaft.y),
-            num_teeth=initial_gear_teeth
+            desired_diameter=max_input_radius * 2
         )
-        
-        total_margin = first_gear.driven_radius + self.clearance_margin
-        if not self._is_valid_placement(first_gear.center, total_margin):
-            return None, 0, True, {"error": "Initial gear invalid"}
+        self.output_gear = self.gear_factory.create_gear_from_diameter(
+            gear_id='gear_output',
+            center=(self.output_shaft.x, self.output_shaft.y),
+            desired_diameter=max_output_radius * 2
+        )
 
-        self.gears.append(first_gear)
-        self.last_gear = first_gear
+        # 3. Set the initial state of the train
+        self.gears = [self.input_gear, self.output_gear]
+        self.last_gear = self.input_gear # The train starts from the input gear
         
-        # Initialize distance by finding where the input shaft lies on the path
         self.distance_on_path = self._get_path_distance_of_point(self.input_shaft)
         
         return self._get_state(), 0, False, {}
 
     def step(self, action: tuple):
         driven_teeth, driving_teeth = action
-        new_teeth_count = [driven_teeth, driving_teeth] if driven_teeth != driving_teeth else [driven_teeth]
+        new_teeth_counts = [driven_teeth, driving_teeth] if driven_teeth != driving_teeth else [driven_teeth]
         
         meshing_dist = self.gear_factory.get_meshing_distance(
             self.last_gear.teeth_count[-1],
             driven_teeth
         )
         
-        # NEW: Calculate next position by adding to current distance
         self.distance_on_path += meshing_dist
         next_center = self._find_point_on_path(self.distance_on_path)
 
@@ -59,24 +72,41 @@ class GearTrainSimulator:
             return self._get_state(), -100.0, True, {"error": "End of path reached"}
 
         new_gear_set = self.gear_factory.create_gear(
-            gear_id=f'gear_{len(self.gears)}',
+            gear_id=f'gear_{len(self.gears)-1}', # -1 to account for output gear
             center=(next_center.x, next_center.y),
-            num_teeth=new_teeth_count
+            num_teeth=new_teeth_counts
         )
-       
+        
         max_radius = max(new_gear_set.radii)
         total_margin = max_radius + self.clearance_margin
         if not self._is_valid_placement(new_gear_set.center, total_margin):
             return self._get_state(), -100.0, True, {"error": "Invalid placement, too close to boundary"}
 
-        self.gears.append(new_gear_set)
+        # Insert the new gear before the final output gear in the list
+        self.gears.insert(-1, new_gear_set)
         self.last_gear = new_gear_set
         
-        dist_to_target = self._distance(self.last_gear.center, self.output_shaft)
-        if dist_to_target <= self.last_gear.driving_radius:
-            return self._get_state(), 100.0, True, {"success": "Output shaft reached"}
+        # --- NEW SUCCESS CONDITION ---
+        # Check if the new gear can mesh with the pre-placed output gear
+        dist_to_output_gear = self._distance(self.last_gear.center, self.output_gear.center)
+        required_meshing_dist = self.last_gear.driving_radius + self.output_gear.driven_radius
+        
+        if abs(dist_to_output_gear - required_meshing_dist) < 0.5: # Tolerance for success
+            return self._get_state(), 100.0, True, {"success": "Successfully connected to output gear"}
 
         return self._get_state(), -1.0, False, {}
+
+    def _get_state(self):
+        """The state now includes information about the target (output) gear."""
+        if not self.last_gear or not self.output_gear: return None
+        return {
+            "last_gear_center_x": self.last_gear.center.x,
+            "last_gear_center_y": self.last_gear.center.y,
+            "last_gear_driving_radius": self.last_gear.driving_radius,
+            "target_gear_center_x": self.output_gear.center.x,
+            "target_gear_center_y": self.output_gear.center.y,
+            "target_gear_driven_radius": self.output_gear.driven_radius
+        }
 
     def _find_point_on_path(self, target_distance: float):
         """Finds a point on the path at a specific distance from the start of the path."""

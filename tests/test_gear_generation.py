@@ -39,24 +39,26 @@ def test_run_full_pipeline(fn='Example1'):
 
     # 3. --- Pathfinding Step ---
     print("\n--- Finding Optimal Path ---")
-    path_json_path = os.path.join(CONFIG['OUTPUT_DIR'], 'path.json')
-    path_image_path = os.path.join(CONFIG['OUTPUT_DIR'], 'path.png')
+    path_json_path = os.path.join(CONFIG['OUTPUT_DIR'], fn,'path.json')
+    path_image_path = os.path.join(CONFIG['OUTPUT_DIR'], fn, 'path.png')
     
-    finder = Pathfinder()
-    optimal_path = finder.find_path(processed_json_path)
+    # finder = Pathfinder()
+    with open(path_json_path, 'r') as f:
+        optimal_path = json.load(f)
+    # print(optimal_path)
+    # optimal_path = finder.find_path(processed_json_path)
     
     if optimal_path:
         # Save path to JSON
-        with open(path_json_path, 'w') as f:
-            json.dump(optimal_path, f, indent=4)
-        print(f"Path saved to {path_json_path}")
+        # with open(path_json_path, 'w') as f:
+        #     json.dump(optimal_path, f, indent=4)
+        # print(f"Path saved to {path_json_path}")
 
         # Generate visualization
-        path_points = [Point(x=p[0], y=p[1]) for p in optimal_path]
-        Renderer.render_processed_data(
+        Renderer.render_path(
             processed_json_path,
             path_image_path,
-            path=path_points
+            path=optimal_path
         )
         print(f"Visualization saved to {path_image_path}")
     else:
@@ -158,4 +160,4 @@ def test_run_full_pipeline(fn='Example1'):
     print(f"Visualization saved to: {output_image_path}")
 
 if __name__ == "__main__":
-    test_run_full_pipeline("Example1")
+    test_run_full_pipeline("Example2")
