@@ -1,6 +1,7 @@
 from dataclasses import dataclass, asdict, field
 from typing import List, Dict, Optional, Tuple, Any
 import json
+import numpy as np
 
 @dataclass
 class Constraints:
@@ -35,6 +36,8 @@ class Point:
     def to_json(self) -> Dict:
         return asdict(self)
 
+    def to_np(self):
+        return np.array([self.x,self.y])
 @dataclass
 class Boundary:
     points: List[Point]

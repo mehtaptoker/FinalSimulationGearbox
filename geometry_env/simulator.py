@@ -1,7 +1,6 @@
 import math
 from typing import List, Tuple
-from common.data_models import Point
-from gear_generator.common import GearSet
+from common.data_models import Point, GearSet
 from gear_generator.factory import GearFactory
 
 

@@ -1,6 +1,7 @@
 import json
 import sys
 import numpy as np
+sys.path.append("../")
 
 import os
 from preprocessing.processor import Processor
@@ -92,7 +93,7 @@ def test_run_full_pipeline(fn='Example1'):
     intermediate_actions = [
         (10, 15),  # Action 1: Place a compound gear
         (20, 15),  # Action 2: Place another compound gear
-        (30, 30)   # Action 3: Place a simple gear
+        (10, 10)   # Action 3: Place a simple gear
     ]
     
     done = False
@@ -113,7 +114,7 @@ def test_run_full_pipeline(fn='Example1'):
         print("Step 3: Calculating and placing final gear on output shaft...")
         last_intermediate_gear = simulator.last_gear
         
-        dist_to_output = np.linalg.norm(np.array(last_intermediate_gear.center) - np.array(shaft_output))
+        dist_to_output = np.linalg.norm(np.array(last_intermediate_gear.center.to_np()) - np.array(shaft_output))
         final_gear_radius = dist_to_output - last_intermediate_gear.driving_radius
         
         if final_gear_radius * 2 < (8 * CONFIG["module"]): # Check if the gear would be too small
