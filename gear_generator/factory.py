@@ -1,49 +1,60 @@
-from common.data_models import Gear, Point
+from common.data_models import Gear, Point, GearSet
 import math
 
 class GearFactory:
-    def __init__(self, base_module: float = 1.0):
-        """
-        Initialize the gear factory with a base module size
-        
-        Args:
-            base_module: Standard size for gear teeth (default 1.0)
-        """
-        self.base_module = base_module
+    def __init__(self, module: float = 1.0):
+        self.module = module
 
-    def create_gear(self, center: Point, teeth: int) -> Gear:
+    def create_gear_from_diameter(self, gear_id: str, center: tuple[float, float], desired_diameter: float) -> Gear:
         """
-        Create a gear with specified center and number of teeth
+        Creates a gear by approximating a desired diameter.
         
         Args:
-            center: Center point of the gear (x, y)
-            teeth: Number of teeth on the gear
-            
+            desired_diameter: The target pitch diameter for the gear.
+        
         Returns:
-            Gear object with calculated properties
+            A Gear object with an integer number of teeth and a diameter
+            that is a close approximation of the desired diameter.
         """
-        # Validate input
-        if teeth < 8:
-            raise ValueError("Gear must have at least 8 teeth")
-        if teeth > 200:
-            raise ValueError("Gear cannot have more than 200 teeth")
-            
-        # Calculate gear properties
-        module = self._calculate_module(teeth)
-        return Gear(center=center, teeth=teeth, module=module)
+        if desired_diameter <= 0:
+            raise ValueError("Diameter must be positive.")
 
-    def _calculate_module(self, teeth: int) -> float:
+        # 1. Calculate the ideal, non-integer number of teeth
+        ideal_teeth = desired_diameter / self.module
+        
+        # 2. Round to the nearest whole number for a valid tooth count
+        actual_teeth = round(ideal_teeth)
+        
+        # Ensure the tooth count is within a valid range
+        actual_teeth = max(8, min(200, actual_teeth))
+        
+        # 3. Create the gear using the valid, integer tooth count
+        return self.create_gear(gear_id, center, actual_teeth)
+
+    def create_gear(self, gear_id: str, center: tuple[float, float], num_teeth: int | list[int]):
         """
-        Calculate module based on number of teeth using standard gear formulas
+        Creates a gear set. Accepts a single int for a simple gear or a
+        list of ints for a compound gear.
         """
-        # Standard module sizing based on tooth count
-        if teeth <= 20:
-            return self.base_module * 0.75
-        elif teeth <= 40:
-            return self.base_module
-        elif teeth <= 60:
-            return self.base_module * 1.25
-        elif teeth <= 80:
-            return self.base_module * 1.5
-        else:
-            return self.base_module * 2.0
+        # Ensure we are always working with a list for consistent processing.
+        teeth_list = [num_teeth] if isinstance(num_teeth, int) else num_teeth
+
+        # Validate each tooth count in the list
+        for teeth_count in teeth_list:
+            if not (8 <= teeth_count <= 200):
+                raise ValueError(
+                    f"Tooth count {teeth_count} is not within the valid range of 8 to 200."
+                )
+            
+        # Convert the center tuple into a Point object before creating the GearSet.
+        center_point = Point(x=center[0], y=center[1])
+        
+        # Pass the Point object to the constructor
+        return GearSet(id=gear_id, center=center_point, teeth_counts=teeth_list, module=self.module)
+
+    def get_meshing_distance(self, num_teeth1: int, num_teeth2: int) -> float:
+        """Calculates the required center-to-center distance for two gears to mesh."""
+        radius1 = (self.module * num_teeth1) / 2
+        radius2 = (self.module * num_teeth2) / 2
+        return radius1 + radius2
+

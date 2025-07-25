@@ -1,5 +1,5 @@
 from dataclasses import dataclass, asdict, field
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 import json
 
 @dataclass
@@ -46,37 +46,28 @@ class Boundary:
     def to_json(self) -> List[Dict]:
         return [p.to_json() for p in self.points]
 
-@dataclass
-class Gear:
-    center: Point
-    teeth: int
-    module: float
+# @dataclass
+# class Gear:
+#     center: Point
+#     teeth: int
+#     module: float
     
-    @property
-    def diameter(self) -> float:
-        return self.teeth * self.module
+#     @property
+#     def diameter(self) -> float:
+#         return self.teeth * self.module
     
-    @classmethod
-    def from_json(cls, json_data: Dict) -> "Gear":
-        return cls(
-            center=Point.from_json(json_data["center"]),
-            teeth=json_data["teeth"],
-            module=json_data["module"]
-        )
+#     @classmethod
+#     def from_json(cls, json_data: Dict) -> "Gear":
+#         return cls(
+#             center=Point.from_json(json_data["center"]),
+#             teeth=json_data["teeth"],
+#             module=json_data["module"]
+#         )
     
-    def to_json(self) -> Dict:
-        return asdict(self)
+#     def to_json(self) -> Dict:
+#         return asdict(self)
 
-@dataclass
-class GearLayout:
-    gears: List[Gear]
-    
-    @classmethod
-    def from_json(cls, json_data: List[Dict]) -> "GearLayout":
-        return cls(gears=[Gear.from_json(g) for g in json_data])
-    
-    def to_json(self) -> List[Dict]:
-        return [g.to_json() for g in self.gears]
+
 
 @dataclass
 class SystemDefinition:
@@ -109,3 +100,131 @@ class ValidationReport:
     
     def to_json(self) -> Dict:
         return asdict(self)
+
+
+@dataclass
+class Gear:
+    """
+    Represents a gear set on a single shaft. Can be a simple gear (one
+    teeth count) or a compound gear (multiple teeth counts).
+    """
+    id: str
+    center: Point
+    teeth_counts: List[int]
+    module: float
+
+    # The diameters list is calculated automatically after initialization
+    diameters: List[float] = field(init=False, repr=True)
+
+    def __post_init__(self):
+        """Calculates derived properties after the object is created."""
+        if not self.teeth_counts:
+            raise ValueError("Gear must have at least one teeth count.")
+        self.diameters = [teeth * self.module for teeth in self.teeth_counts]
+
+    @property
+    def driven_diameter(self) -> float:
+        """Diameter of the gear that meshes with the *previous* gear in a train."""
+        return self.diameters[0]
+
+    @property
+    def driving_diameter(self) -> float:
+        """Diameter of the gear that drives the *next* gear in a train."""
+        return self.diameters[-1]
+
+    @classmethod
+    def from_json(cls, json_data: Dict[str, Any]) -> "Gear":
+        """
+        Creates a Gear instance from a dictionary.
+
+        Handles both the new 'teeth_counts' (list) and old 'teeth' (int) keys
+        for backward compatibility.
+        """
+        teeth_input = json_data.get("teeth_counts") or json_data["teeth"]
+        
+        # Ensure the final teeth_counts is a list
+        teeth_list = [teeth_input] if isinstance(teeth_input, int) else teeth_input
+
+        return cls(
+            id=json_data["id"],
+            center=Point.from_json(json_data["center"]),
+            teeth_counts=teeth_list,
+            module=json_data["module"]
+        )
+
+    def to_json(self) -> Dict[str, Any]:
+        """Serializes the Gear object to a JSON-compatible dictionary."""
+        return {
+            "id": self.id,
+            "center": self.center.to_json(),
+            "teeth_counts": self.teeth_counts,
+            "module": self.module
+        }
+
+
+@dataclass
+class GearSet:
+    """
+    Represents a gear set on a single shaft. Can be a simple gear (one
+    teeth count) or a compound gear (multiple teeth counts).
+    Includes serialization methods.
+    """
+    id: str
+    center: Point
+    teeth_counts: List[int]
+    module: float
+
+    # The diameters and radii lists are calculated automatically
+    radii: List[float] = field(init=False, repr=True)
+    diameters: List[float] = field(init=False, repr=False)
+
+    def __post_init__(self):
+        """Calculates derived properties after the object is created."""
+        if not self.teeth_counts:
+            raise ValueError("GearSet must have at least one teeth count.")
+        self.radii = [(teeth * self.module) / 2 for teeth in self.teeth_counts]
+        self.diameters = [r * 2 for r in self.radii]
+
+    @property
+    def driven_radius(self) -> float:
+        """Radius of the gear that meshes with the previous gear in a train."""
+        return self.radii[0]
+
+    @property
+    def driving_radius(self) -> float:
+        """Radius of the gear that drives the next gear in a train."""
+        return self.radii[-1]
+    
+    # --- ADD THESE METHODS ---
+
+    @classmethod
+    def from_json(cls, data: Dict[str, Any]) -> "GearSet":
+        """Creates a GearSet instance from a dictionary."""
+        return cls(
+            id=data["id"],
+            center=Point.from_json(data["center"]),
+            teeth_counts=data["teeth_counts"],
+            module=data["module"]
+        )
+
+    def to_json(self) -> Dict[str, Any]:
+        """Serializes the GearSet object to a JSON-compatible dictionary."""
+        return {
+            "id": self.id,
+            "center": self.center.to_json(),
+            "teeth_counts": self.teeth_counts,
+            "module": self.module
+        }
+
+
+
+@dataclass
+class GearLayout:
+    gears: List[Gear]
+    
+    @classmethod
+    def from_json(cls, json_data: List[Dict]) -> "GearLayout":
+        return cls(gears=[Gear.from_json(g) for g in json_data])
+    
+    def to_json(self) -> List[Dict]:
+        return [g.to_json() for g in self.gears]
