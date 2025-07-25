@@ -50,7 +50,7 @@ class GearFactory:
         center_point = Point(x=center[0], y=center[1])
         
         # Pass the Point object to the constructor
-        return GearSet(id=gear_id, center=center_point, diameter_ref=teeth_list, module=self.module)
+        return GearSet(id=gear_id, center=center_point, teeth_count=teeth_list, module=self.module)
 
     def get_meshing_distance(self, num_teeth1: int, num_teeth2: int) -> float:
         """Calculates the required center-to-center distance for two gears to mesh."""

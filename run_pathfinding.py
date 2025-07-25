@@ -25,7 +25,8 @@ image_path = os.path.join(example_output_dir, 'path.png')
 
 # Run pathfinding
 finder = Pathfinder()
-path = finder.find_path(processed_path)
+# path = finder.find_path(processed_path)
+path = finder.find_centerline_path(processed_path)
 
 if path:
     # Save path to JSON
@@ -34,7 +35,7 @@ if path:
     print(f"Path saved to {path_json_path}")
 
     # Generate visualization
-    Renderer.render_processed_data(
+    Renderer.render_path(
         processed_path,
         image_path,
         path=path

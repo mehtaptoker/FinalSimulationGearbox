@@ -44,10 +44,10 @@ class GearTrainSimulator:
 
     def step(self, action: tuple):
         driven_teeth, driving_teeth = action
-        new_diameter_ref = [driven_teeth, driving_teeth] if driven_teeth != driving_teeth else [driven_teeth]
+        new_teeth_count = [driven_teeth, driving_teeth] if driven_teeth != driving_teeth else [driven_teeth]
         
         meshing_dist = self.gear_factory.get_meshing_distance(
-            self.last_gear.diameter_ref[-1],
+            self.last_gear.teeth_count[-1],
             driven_teeth
         )
         
@@ -61,7 +61,7 @@ class GearTrainSimulator:
         new_gear_set = self.gear_factory.create_gear(
             gear_id=f'gear_{len(self.gears)}',
             center=(next_center.x, next_center.y),
-            num_teeth=new_diameter_ref
+            num_teeth=new_teeth_count
         )
        
         max_radius = max(new_gear_set.radii)
@@ -129,7 +129,7 @@ class GearTrainSimulator:
         return {
             "last_gear_center_x": self.last_gear.center.x,
             "last_gear_center_y": self.last_gear.center.y,
-            "last_gear_teeth": self.last_gear.diameter_ref[-1],
+            "last_gear_teeth": self.last_gear.teeth_count[-1],
             "last_gear_radius": self.last_gear.driving_radius,
             "distance_to_target": self._distance(self.last_gear.center, self.output_shaft)
         }

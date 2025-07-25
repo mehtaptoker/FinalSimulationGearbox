@@ -13,6 +13,7 @@ OUTPUT_DIR="output"
 # fi
 
 fs=("Example1" "Example2" "Example3")
+# fs=("Example3")
 
 # Process each example
 for example in "${fs[@]}"; do

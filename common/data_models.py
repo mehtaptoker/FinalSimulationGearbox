@@ -110,7 +110,7 @@ class Gear:
     """
     id: str
     center: Point
-    diameter_ref: List[int]
+    teeth_count: List[int]
     module: float
 
     # The diameters list is calculated automatically after initialization
@@ -118,9 +118,9 @@ class Gear:
 
     def __post_init__(self):
         """Calculates derived properties after the object is created."""
-        if not self.diameter_ref:
+        if not self.teeth_count:
             raise ValueError("Gear must have at least one teeth count.")
-        self.diameters = [teeth * self.module for teeth in self.diameter_ref]
+        self.diameters = [teeth * self.module for teeth in self.teeth_count]
 
     @property
     def driven_diameter(self) -> float:
@@ -137,18 +137,18 @@ class Gear:
         """
         Creates a Gear instance from a dictionary.
 
-        Handles both the new 'diameter_ref' (list) and old 'teeth' (int) keys
+        Handles both the new 'teeth_count' (list) and old 'teeth' (int) keys
         for backward compatibility.
         """
-        teeth_input = json_data.get("diameter_ref") or json_data["teeth"]
+        teeth_input = json_data.get("teeth_count") or json_data["teeth"]
         
-        # Ensure the final diameter_ref is a list
+        # Ensure the final teeth_count is a list
         teeth_list = [teeth_input] if isinstance(teeth_input, int) else teeth_input
 
         return cls(
             id=json_data["id"],
             center=Point.from_json(json_data["center"]),
-            diameter_ref=teeth_list,
+            teeth_count=teeth_list,
             module=json_data["module"]
         )
 
@@ -157,7 +157,7 @@ class Gear:
         return {
             "id": self.id,
             "center": self.center.to_json(),
-            "diameter_ref": self.diameter_ref,
+            "teeth_count": self.teeth_count,
             "module": self.module
         }
 
@@ -171,7 +171,7 @@ class GearSet:
     """
     id: str
     center: Point
-    diameter_ref: List[int]
+    teeth_count: List[int]
     module: float
 
     # The diameters and radii lists are calculated automatically
@@ -180,9 +180,9 @@ class GearSet:
 
     def __post_init__(self):
         """Calculates derived properties after the object is created."""
-        if not self.diameter_ref:
+        if not self.teeth_count:
             raise ValueError("GearSet must have at least one teeth count.")
-        self.radii = [(teeth * self.module) / 2 for teeth in self.diameter_ref]
+        self.radii = [(teeth * self.module) / 2 for teeth in self.teeth_count]
         self.diameters = [r * 2 for r in self.radii]
 
     @property
@@ -203,7 +203,7 @@ class GearSet:
         return cls(
             id=data["id"],
             center=Point.from_json(data["center"]),
-            diameter_ref=data["diameter_ref"],
+            teeth_count=data["teeth_count"],
             module=data["module"]
         )
 
@@ -212,7 +212,7 @@ class GearSet:
         return {
             "id": self.id,
             "center": self.center.to_json(),
-            "diameter_ref": self.diameter_ref,
+            "teeth_count": self.teeth_count,
             "module": self.module
         }
 

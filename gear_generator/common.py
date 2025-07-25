@@ -27,7 +27,7 @@ class GearSet:
     # A list of teeth counts for gears on this shaft.
     # e.g., [20] is a simple gear.
     # e.g., [40, 15] is a compound gear.
-    diameter_ref: List[int]
+    teeth_count: List[int]
     
     module: float = 1.0
     
@@ -36,9 +36,9 @@ class GearSet:
 
     def __post_init__(self):
         """Calculate properties after the object is created."""
-        if not self.diameter_ref:
+        if not self.teeth_count:
             raise ValueError("GearSet must have at least one gear.")
-        self.radii = [(self.module * teeth) / 2 for teeth in self.diameter_ref]
+        self.radii = [(self.module * teeth) / 2 for teeth in self.teeth_count]
 
     @property
     def driven_radius(self) -> float:

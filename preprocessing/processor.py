@@ -113,7 +113,7 @@ class Processor:
         return (cX, cY)
 
     @staticmethod
-    def _approximate_contour(contour, epsilon_factor=0.01):
+    def _approximate_contour(contour, epsilon_factor=0.001):
         """Approximate contour using Ramer-Douglas-Peucker algorithm"""
         epsilon = epsilon_factor * cv2.arcLength(contour, True)
         return cv2.approxPolyDP(contour, epsilon, True).squeeze().tolist()

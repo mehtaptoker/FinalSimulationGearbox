@@ -53,8 +53,8 @@ class Renderer:
         
         # Plot path if provided
         if path:
-            path_x = [p.x for p in path]
-            path_y = [p.y for p in path]
+            path_x = [p[0] for p in path]
+            path_y = [p[1] for p in path]
             ax.plot(path_x, path_y, 'm-', linewidth=1, alpha=0.7, label='Path')
         
         # Set plot properties
@@ -93,6 +93,50 @@ class Renderer:
         
         # Render the system with optional path and gears
         Renderer.render_system(system, output_path, path, gears)
+
+    @staticmethod
+    def render_path(processed_data_path: str, output_path: str, path: List[Tuple[float, float]]):
+        """
+        Renders only the normalized boundaries, shafts, and a given path.
+        """
+        with open(processed_data_path, 'r') as f:
+            data = json.load(f)['normalized_space']
+
+        boundary_points = data['boundaries']
+        input_shaft = tuple(data['input_shaft'].values())
+        output_shaft = tuple(data['output_shaft'].values())
+
+        fig, ax = plt.subplots(figsize=(12, 12))
+
+        # Plot boundary polygon
+        boundary_poly = Polygon(boundary_points, closed=True, fill=False, color='black', linewidth=2)
+        ax.add_patch(boundary_poly)
+
+        # Plot input and output shafts
+        ax.plot(input_shaft[0], input_shaft[1], 'ro', markersize=10, label='Input Shaft')
+        ax.plot(output_shaft[0], output_shaft[1], 'bo', markersize=10, label='Output Shaft')
+
+        # print(path)
+        # Plot path
+        path_x = [p[0] for p in path]
+        path_y = [p[1] for p in path]
+        ax.plot(path_x, path_y, 'm-', linewidth=2, label='Path')
+
+        # Set plot properties
+        all_x = [p[0] for p in boundary_points]
+        all_y = [p[1] for p in boundary_points]
+        ax.set_xlim(min(all_x) - 10, max(all_x) + 10)
+        ax.set_ylim(min(all_y) - 10, max(all_y) + 10)
+        # ax.set_xlim(-60,60)
+        # ax.set_ylim(-60,60)
+        ax.invert_yaxis()
+        ax.set_aspect('equal')
+        ax.grid(True)
+        ax.legend()
+        ax.set_title('Path Visualization')
+
+        plt.savefig(output_path, bbox_inches='tight', dpi=300)
+        plt.close()
 
 if __name__ == "__main__":
     fn = 'Example1'

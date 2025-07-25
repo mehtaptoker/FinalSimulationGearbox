@@ -1,14 +1,45 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
+from torch.distributions import Categorical
 import numpy as np
+import os
+from typing import List
+
+# Ensure the BaseAgent is importable from its location
 from .base_agent import BaseAgent
 
+class TrajectoryBuffer:
+    """A buffer to store trajectories (sequences of state, action, etc.)."""
+    def __init__(self):
+        self.states = []
+        self.actions = []
+        self.log_probs = []
+        self.rewards = []
+        self.is_terminal = []
+
+    def clear(self):
+        """Clears all stored trajectories."""
+        del self.states[:]
+        del self.actions[:]
+        del self.log_probs[:]
+        del self.rewards[:]
+        del self.is_terminal[:]
+
+    def add(self, state, action, reward, done, log_prob):
+        """Adds a new experience to the buffer."""
+        self.states.append(state)
+        self.actions.append(action)
+        self.rewards.append(reward)
+        self.is_terminal.append(done)
+        self.log_probs.append(log_prob)
+
 class ActorCritic(nn.Module):
-    """Actor-Critic network for PPO."""
-    
-    def __init__(self, state_dim: int, action_dims: list[int]):
+    """
+    An Actor-Critic network for PPO.
+    It has two separate output heads for the two-part discrete action, which is
+    necessary for the MultiDiscrete action space.
+    """
+    def __init__(self, state_dim: int, action_dims: List[int]):
         super(ActorCritic, self).__init__()
 
         # Shared layers to process the state
@@ -18,8 +49,8 @@ class ActorCritic(nn.Module):
             nn.Linear(128, 128),
             nn.Tanh()
         )
-        
-        # Actor requires two separate heads for MultiDiscrete action space
+
+        # Actor heads - one for each part of the MultiDiscrete action
         self.actor_head1 = nn.Linear(128, action_dims[0])
         self.actor_head2 = nn.Linear(128, action_dims[1])
 
@@ -38,91 +69,101 @@ class ActorCritic(nn.Module):
         return action_logits1, action_logits2, state_value
 
 class PPOAgent(BaseAgent):
-    """Proximal Policy Optimization (PPO) agent implementation."""
+    """PPO Agent that handles the MultiDiscrete action space for gear generation."""
     
-    def __init__(self, state_dim, action_dim, lr=3e-4, gamma=0.99, clip_epsilon=0.2, entropy_coef=0.01):
-        super().__init__(state_dim, action_dim)
-        self.model = ActorCritic(state_dim, action_dim).to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+    def __init__(self, state_dim: int, action_dims: List[int], lr: float, 
+                 gamma: float, clip_epsilon: float, epochs: int = 10):
+        
+        super().__init__(state_dim, action_dims) 
+        
         self.gamma = gamma
         self.clip_epsilon = clip_epsilon
-        self.entropy_coef = entropy_coef
-        self.memory = []
+        self.epochs = epochs
         
+        self.policy = ActorCritic(state_dim, action_dims).to(self.device)
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
+        
+        self.policy_old = ActorCritic(state_dim, action_dims).to(self.device)
+        self.policy_old.load_state_dict(self.policy.state_dict())
+        
+        self.memory = TrajectoryBuffer()
+        self.mse_loss = nn.MSELoss()
+
     def act(self, state):
-        state = torch.tensor(state, dtype=torch.float32).to(self.device)
+        """Selects an action using the old policy for stable exploration."""
         with torch.no_grad():
-            action_probs, _ = self.model(state)
-            dist = torch.distributions.Categorical(action_probs)
-            action_idx = dist.sample()
-            log_prob = dist.log_prob(action_idx)
+            state = torch.FloatTensor(state).to(self.device)
+            logits1, logits2, _ = self.policy_old(state)
             
-            # Map index to action parameters
-            action_type = action_idx.item()
-            action_params = []
+            dist1 = Categorical(logits=logits1)
+            dist2 = Categorical(logits=logits2)
             
-            # Define action parameters based on action type
-            if action_type == 0:  # No-op
-                pass
-            elif 1 <= action_type <= 4:  # Add gear
-                action_params = [np.random.uniform(0, 1) for _ in range(4)]  # x, y, radius, teeth
-            elif 5 <= action_type <= 6:  # Remove gear
-                action_params = [np.random.randint(0, 10)]  # gear index
-            elif 7 <= action_type <= 9:  # Adjust position
-                action_params = [np.random.randint(0, 10), np.random.uniform(0, 1), np.random.uniform(0, 1)]  # index, x, y
-            elif 10 <= action_type <= 12:  # Change size
-                action_params = [np.random.randint(0, 10), np.random.uniform(0, 1), np.random.randint(8, 32)]  # index, radius, teeth
+            action1 = dist1.sample()
+            action2 = dist2.sample()
             
-            # Combine action type and parameters
-            action = [action_type] + action_params
-            
-        return action, log_prob.item()
-    
-    def update(self, states, actions, rewards, next_states, dones):
-        # Convert to tensors - use single numpy array conversion for efficiency
-        states = torch.tensor(np.array(states), dtype=torch.float32).to(self.device)
-        actions = torch.tensor(np.array(actions), dtype=torch.int64).to(self.device)
-        rewards = torch.tensor(np.array(rewards), dtype=torch.float32).to(self.device)
-        next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(self.device)
-        dones = torch.tensor(np.array(dones), dtype=torch.float32).to(self.device)
-        
-        # Calculate advantages
+            log_prob = dist1.log_prob(action1) + dist2.log_prob(action2)
+            action = torch.stack([action1, action2])
+
+        # Convert log_prob to a standard Python float before returning
+        return action.cpu().numpy(), log_prob.item()
+
+    def update(self):
+        """Updates the policy network using data from the memory buffer."""
+        rewards_to_go = []
+        discounted_reward = 0
+        for reward, is_terminal in zip(reversed(self.memory.rewards), reversed(self.memory.is_terminal)):
+            if is_terminal:
+                discounted_reward = 0
+            discounted_reward = reward + (self.gamma * discounted_reward)
+            rewards_to_go.insert(0, discounted_reward)
+
+        rewards_to_go = torch.tensor(rewards_to_go, dtype=torch.float32).to(self.device)
+        old_states = torch.tensor(np.array(self.memory.states), dtype=torch.float32).to(self.device)
+        old_actions = torch.tensor(np.array(self.memory.actions), dtype=torch.int64).to(self.device)
+        old_log_probs = torch.tensor(self.memory.log_probs, dtype=torch.float32).to(self.device)
+
         with torch.no_grad():
-            _, current_values = self.model(states)
-            _, next_values = self.model(next_states)
-            td_target = rewards + (1 - dones) * self.gamma * next_values
-            advantages = td_target - current_values
+            _, _, state_values = self.policy(old_states)
+            state_values = torch.squeeze(state_values)
+        advantages = rewards_to_go - state_values
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        total_loss = 0
+        for _ in range(self.epochs):
+            logits1, logits2, state_values = self.policy(old_states)
+            state_values = torch.squeeze(state_values)
+            
+            dist1 = Categorical(logits=logits1)
+            dist2 = Categorical(logits=logits2)
+            
+            log_probs1 = dist1.log_prob(old_actions[:, 0])
+            log_probs2 = dist2.log_prob(old_actions[:, 1])
+            new_log_probs = log_probs1 + log_probs2
+            entropy = dist1.entropy() + dist2.entropy()
+
+            ratios = torch.exp(new_log_probs - old_log_probs)
+            surr1 = ratios * advantages
+            surr2 = torch.clamp(ratios, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * advantages
+            
+            loss = -torch.min(surr1, surr2).mean() + 0.5 * self.mse_loss(state_values, rewards_to_go) - 0.01 * entropy.mean()
+            total_loss += loss.item()
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
         
-        # Get current policy
-        action_probs, values = self.model(states)
-        dist = torch.distributions.Categorical(action_probs)
-        log_probs = dist.log_prob(actions)
-        
-        # PPO loss calculation
-        ratios = torch.exp(log_probs - log_probs.detach())
-        surr1 = ratios * advantages
-        surr2 = torch.clamp(ratios, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * advantages
-        actor_loss = -torch.min(surr1, surr2).mean()
-        
-        # Critic loss - reshape td_target to match values shape
-        critic_loss = F.mse_loss(values, td_target.detach().view(-1, 1))
-        
-        # Entropy bonus
-        entropy = dist.entropy().mean()
-        
-        # Total loss
-        loss = actor_loss + 0.5 * critic_loss - self.entropy_coef * entropy
-        
-        # Optimize
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        
-        return loss.item()
-    
+        self.policy_old.load_state_dict(self.policy.state_dict())
+        self.memory.clear()
+
+        return total_loss / self.epochs
+
     def save(self, path):
-        torch.save(self.model.state_dict(), path)
-    
+        """Saves the model's state dictionary."""
+        print(f"Saving model to {path}")
+        torch.save(self.policy.state_dict(), path)
+
     def load(self, path):
-        self.model.load_state_dict(torch.load(path))
-        self.model.eval()
+        """Loads the model's state dictionary."""
+        print(f"Loading model from {path}")
+        self.policy.load_state_dict(torch.load(path, map_location=self.device))
+        self.policy_old.load_state_dict(torch.load(path, map_location=self.device))
