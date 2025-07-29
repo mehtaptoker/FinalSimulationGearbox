@@ -2,7 +2,8 @@ import cv2
 import json
 import numpy as np
 import os
-
+import sys
+sys.path.append("../")
 class Processor:
     @staticmethod
     def process_input(png_path, constraints_path, output_path, config=None):
@@ -68,7 +69,6 @@ class Processor:
         scale = 100 / max(max_x - min_x, max_y - min_y)
         offset_x = -((min_x + max_x) / 2) * scale
         offset_y = -((min_y + max_y) / 2) * scale
-        
         def normalize_point(x, y):
             return x * scale + offset_x, y * scale + offset_y
         
@@ -95,7 +95,7 @@ class Processor:
                 "offset_y": offset_y
             }
         }
-        
+        intermediate['background_image_path'] = png_path
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, 'w') as f:
             json.dump(intermediate, f, indent=2)
@@ -117,3 +117,4 @@ class Processor:
         """Approximate contour using Ramer-Douglas-Peucker algorithm"""
         epsilon = epsilon_factor * cv2.arcLength(contour, True)
         return cv2.approxPolyDP(contour, epsilon, True).squeeze().tolist()
+ 

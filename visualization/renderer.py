@@ -1,10 +1,15 @@
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import sys
+import os
+sys.path.append("../")
+#sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from matplotlib.patches import Polygon, Circle
 from typing import List, Tuple, Dict, Any
 from common.data_models import SystemDefinition, Boundary, Point, Constraints, Gear
 import numpy as np
 import json
-import os
+
 
 class Renderer:
     @staticmethod
@@ -138,6 +143,71 @@ class Renderer:
 
         plt.savefig(output_path, bbox_inches='tight', dpi=300)
         plt.close()
+    # In visualization/renderer.py -> class Renderer
+
+    @staticmethod
+    def render_clearance(processed_data_path, output_path, clearance_data, path):
+        """Rendert de 'clearance corridor' op de afbeelding."""
+        fig, ax = Renderer.setup_plot_from_processed_data(processed_data_path)
+
+        # Teken het pad
+        path_x = [p[0] for p in path]  # Gebruik index 0 voor x
+        path_y = [p[1] for p in path]  # Gebruik index 1 voor y
+        ax.plot(path_x, path_y, 'g--', linewidth=1, label='Optimal Path')
+
+        # Teken de clearance cirkels
+        for data in clearance_data:
+            circle = plt.Circle(
+                (data['point_x'], data['point_y']),
+                data['max_radius'],
+                color='cyan',
+                alpha=0.3,
+                fill=True,
+                linewidth=0
+            )
+            ax.add_artist(circle)
+        
+        # Sla de afbeelding op
+        plt.legend()
+        plt.savefig(output_path, dpi=300)
+        plt.close()
+    # In visualization/renderer.py -> class Renderer
+
+    @staticmethod
+    def setup_plot_from_processed_data(processed_data_path):
+        """
+        Zet een matplotlib plot op door de achtergrondafbeelding, grenzen,
+        en assen uit een processed JSON-bestand te laden.
+
+        Returns:
+            fig, ax: De Matplotlib figure en axes objecten.
+        """
+        with open(processed_data_path, 'r') as f:
+            data = json.load(f)
+
+        # Haal de benodigde data op
+        img_path = data['background_image_path']
+        normalized_space = data['normalized_space']
+        boundaries = normalized_space['boundaries']
+        input_shaft = normalized_space['input_shaft']
+        output_shaft = normalized_space['output_shaft']
+        img = mpimg.imread(img_path)
+        
+        # Zet de plot op
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.imshow(img, extent=[0, img.shape[1], 0, img.shape[0]])
+        ax.set_aspect('equal')
+        
+        # Teken de grenzen
+        boundary_x = [p[0] for p in boundaries] + [boundaries[0][0]]
+        boundary_y = [p[1] for p in boundaries] + [boundaries[0][1]]
+        ax.plot(boundary_x, boundary_y, 'b-', label='Boundary')
+
+        # Teken de assen
+        ax.plot(input_shaft['x'], input_shaft['y'], 'go', markersize=10, label='Input Shaft')
+        ax.plot(output_shaft['x'], output_shaft['y'], 'ro', markersize=10, label='Output Shaft')
+
+        return fig, ax
 
 if __name__ == "__main__":
     fn = 'Example1'

@@ -1,4 +1,6 @@
 import math
+import sys
+sys.path.append("../")
 from typing import List, Tuple
 from common.data_models import Point, GearSet
 from gear_generator.factory import GearFactory
@@ -24,6 +26,7 @@ class GearTrainSimulator:
         self.input_gear: GearSet = None  # NEW
         self.output_gear: GearSet = None # NEW
         self.distance_on_path: float = 0.0
+        self.current_path_index = 1 # <-- VOEG DEZE REGEL TOE
 
     def reset(self, initial_gear_teeth: int = None): # initial_gear_teeth is no longer used
         self.gears = []
@@ -52,6 +55,7 @@ class GearTrainSimulator:
         self.last_gear = self.input_gear # The train starts from the input gear
         
         self.distance_on_path = self._get_path_distance_of_point(self.input_shaft)
+        
         
         return self._get_state(), 0, False, {}
 
@@ -215,3 +219,33 @@ class GearTrainSimulator:
             if dist < min_dist:
                 min_dist = dist
         return min_dist
+    # In simulator.py -> class GearTrainSimulator
+
+    def analyze_path_clearance(self, clearance_margin: float = 0.0) -> list[dict]:
+        """
+        Analyseert het pad om voor elk punt de maximaal mogelijke
+        straal en diameter van een tandwiel te bepalen.
+
+        Args:
+            clearance_margin (float): Een optionele extra marge.
+
+        Returns:
+            Een lijst van dictionaries met de positie en de max. radius/diameter.
+        """
+        clearance_data = []
+        for point in self.path:
+            # Bereken de afstand tot de dichtstbijzijnde grens.
+            max_radius = self._distance_to_boundary(point, self.boundaries)
+            
+            # Pas de gevraagde marge toe.
+            adjusted_radius = max_radius - clearance_margin
+            if adjusted_radius < 0:
+                adjusted_radius = 0
+
+            clearance_data.append({
+                "point_x": point.x,
+                "point_y": point.y,
+                "max_radius": adjusted_radius,
+                "max_diameter": adjusted_radius * 2
+            })
+        return clearance_data
