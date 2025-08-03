@@ -1079,3 +1079,4 @@ if __name__ == "__main__":
     generate_comparison_visual()
     print("\nAll visuals have been generated in the 'thesis_visuals' folder.")
 
+###################### Justification
