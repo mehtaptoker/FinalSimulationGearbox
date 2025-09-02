@@ -1,6 +1,9 @@
 import unittest
 import json
 import os
+import sys
+sys.path.append("../")
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from geometry_env.manager import EnvironmentManager
 from common.data_models import Point, Boundary
 

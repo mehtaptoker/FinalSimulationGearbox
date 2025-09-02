@@ -1,5 +1,10 @@
 import unittest
 import math
+import sys
+import os
+sys.path.append("../")
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from physics_validator.validator import PhysicsValidator
 from common.data_models import GearLayout, SystemDefinition, Gear, Point, Constraints, Boundary, ValidationReport
 

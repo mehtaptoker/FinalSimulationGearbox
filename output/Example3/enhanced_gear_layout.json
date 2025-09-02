@@ -1,0 +1,156 @@
+[
+    {
+        "id": "gear_input",
+        "center": {
+            "x": 33.98959541635908,
+            "y": 0.11494252873563227
+        },
+        "teeth_count": [
+            25
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "gear_output",
+        "center": {
+            "x": -33.53421420131056,
+            "y": 4.6557095284133645
+        },
+        "teeth_count": [
+            35
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "gear_intermediate_1",
+        "center": {
+            "x": 11.481658877135867,
+            "y": 1.6285315286282096
+        },
+        "teeth_count": [
+            12
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "gear_intermediate_2",
+        "center": {
+            "x": -11.026277662087345,
+            "y": 3.142120528520787
+        },
+        "teeth_count": [
+            14
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "compound_1_small",
+        "center": {
+            "x": 0.18215248601940745,
+            "y": 2.862391234289398
+        },
+        "teeth_count": [
+            8
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "compound_1_large",
+        "center": {
+            "x": 0.18215248601940745,
+            "y": 2.862391234289398
+        },
+        "teeth_count": [
+            16
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "compound_2_small",
+        "center": {
+            "x": 0.318766850533963,
+            "y": 1.9082608228595987
+        },
+        "teeth_count": [
+            10
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "compound_2_large",
+        "center": {
+            "x": 0.318766850533963,
+            "y": 1.9082608228595987
+        },
+        "teeth_count": [
+            18
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "gear_connector_1",
+        "center": {
+            "x": 13.732452531058186,
+            "y": 3.2934794285100444
+        },
+        "teeth_count": [
+            10
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "gear_connector_2",
+        "center": {
+            "x": -13.27707131600967,
+            "y": 1.0230959286711787
+        },
+        "teeth_count": [
+            12
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "bridge_gear_1",
+        "center": {
+            "x": -6.0342142013105615,
+            "y": 4.6557095284133645
+        },
+        "teeth_count": [
+            16
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "bridge_gear_2",
+        "center": {
+            "x": -14.088777718680504,
+            "y": 24.101146011043422
+        },
+        "teeth_count": [
+            16
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "bridge_gear_3",
+        "center": {
+            "x": -33.53421420131056,
+            "y": 32.15570952841337
+        },
+        "teeth_count": [
+            16
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "bridge_gear_4",
+        "center": {
+            "x": -52.97965068394062,
+            "y": 24.101146011043422
+        },
+        "teeth_count": [
+            16
+        ],
+        "module": 1.0
+    }
+]

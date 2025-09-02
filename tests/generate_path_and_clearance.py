@@ -178,7 +178,7 @@ import matplotlib.pyplot as plt
 
 # --- CONFIGURATIE ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLE_NAME = "Example2"
+EXAMPLE_NAME = "Example3"
 MARGIN = 1.0
 
 # Paden naar de input-bestanden
@@ -282,7 +282,7 @@ import matplotlib.pyplot as plt
 
 # --- CONFIGURATIE ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLE_NAME = "Example2"
+EXAMPLE_NAME = "Example3"
 STEP_DISTANCE = 1.0  # Analyseer het pad elke 1 mm
 
 # Paden naar de input-bestanden
@@ -401,7 +401,7 @@ import matplotlib.pyplot as plt
 
 # --- CONFIGURATIE ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLE_NAME = "Example2"
+EXAMPLE_NAME = "Example3"
 STEP_DISTANCE = 1.0  # Analyseer het pad elke 1 mm
 
 # Paden naar de input-bestanden
@@ -531,7 +531,7 @@ import matplotlib.pyplot as plt
 
 # --- CONFIGURATIE ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLE_NAME = "Example2"
+EXAMPLE_NAME = "Example3"
 STEP_DISTANCE = 1.0  # Analyseer het pad elke 1 mm
 MARGIN = 1.0 # De marge die van de breedte wordt afgetrokken
 
@@ -668,7 +668,7 @@ import matplotlib.pyplot as plt
 
 # --- CONFIGURATIE ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLE_NAME = "Example2"
+EXAMPLE_NAME = "Example3"
 MODULE = 1.0
 MIN_TEETH = 8
 # 'min_gears' (groot) of 'max_gears' (klein)
@@ -1079,4 +1079,4 @@ if __name__ == "__main__":
     generate_comparison_visual()
     print("\nAll visuals have been generated in the 'thesis_visuals' folder.")
 
-###################### Justification
+

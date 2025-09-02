@@ -1,0 +1,57 @@
+[
+    {
+        "id": "gear_input",
+        "center": {
+            "x": 33.98959541635908,
+            "y": 0.11494252873563227
+        },
+        "teeth_count": [
+            30
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "gear_output",
+        "center": {
+            "x": -33.53421420131056,
+            "y": 4.6557095284133645
+        },
+        "teeth_count": [
+            40
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "gear_1",
+        "center": {
+            "x": 20.0,
+            "y": 5.0
+        },
+        "teeth_count": [
+            8
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "gear_2",
+        "center": {
+            "x": 10.0,
+            "y": 8.0
+        },
+        "teeth_count": [
+            10
+        ],
+        "module": 1.0
+    },
+    {
+        "id": "gear_3",
+        "center": {
+            "x": 2.0,
+            "y": 12.0
+        },
+        "teeth_count": [
+            8
+        ],
+        "module": 1.0
+    }
+]

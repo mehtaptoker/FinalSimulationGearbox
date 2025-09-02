@@ -1,6 +1,9 @@
 import pytest
 import tempfile
 import os
+import sys
+sys.path.append("../")
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from visualization.renderer import Renderer
 from common.data_models import SystemDefinition, Boundary, Point, Constraints
 

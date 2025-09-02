@@ -20,8 +20,8 @@ from stable_baselines3.common.env_checker import check_env
 from IPython.display import display, clear_output
 
 # --- CONFIGURATIE VAN DE BEKENDE OPLOSSING ---
-TARGET_GEAR_RATIO = 1.875
-DESIRED_INTERMEDIATE_GEARS = 2
+TARGET_GEAR_RATIO = 2
+DESIRED_INTERMEDIATE_GEARS = 4
 
 class Gear:
     """Dataklasse voor een tandwiel."""

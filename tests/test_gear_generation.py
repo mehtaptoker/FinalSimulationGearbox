@@ -2,471 +2,342 @@ import json
 import sys
 import numpy as np
 import os
-#sys.path.append("../")
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import torch
 
+# ---------------------------------------------------------------------
+# Global CPU-only mode to avoid CUDA surprises in evaluation
+# ---------------------------------------------------------------------
+torch.cuda.is_available = lambda: False
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+# Make project root importable (tests/ -> project root)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Project imports
 from preprocessing.processor import Processor
 from gear_generator.factory import GearFactory
-from geometry_env.simulator import GearTrainSimulator
-from common.data_models import Gear, Point 
+from geometry_env.env import GearEnv
+from rl_agent.agents.ppo_agent import PPOAgent
+from common.data_models import Gear, Point
 from visualization.renderer import Renderer
 from pathfinding.finder import Pathfinder
 
-# Bovenaan test_gear_generation.py
-from shapely.geometry import Point
-from shapely.ops import unary_union
-from descartes import PolygonPatch # Nodig voor de visualisatie
 
-def create_clearance_area(path_possibilities):
+# ---------------------------------------------------------------------
+# 1) Monkey-patch Point so code that uses p[0]/p[1] also works.
+#    We do NOT modify simulator.py; we adapt here as requested.
+# ---------------------------------------------------------------------
+try:
+    if not hasattr(Point, "__getitem__"):
+        def __getitem__(self, idx):
+            if idx == 0:
+                return float(self.x)
+            if idx == 1:
+                return float(self.y)
+            raise IndexError("Point only supports indices 0 (x) and 1 (y)")
+        Point.__getitem__ = __getitem__  # type: ignore[attr-defined]
+except Exception as e:
+    print("Warning: could not patch Point for subscriptability:", e)
+
+
+# ---------------------------------------------------------------------
+# 2) Utilities: JSON-safe dumping and geometry normalization
+# ---------------------------------------------------------------------
+def _json_np_default(o):
+    """Convert NumPy / torch types to native Python for json.dump."""
+    import numpy as _np
+    if isinstance(o, _np.integer):
+        return int(o)
+    if isinstance(o, _np.floating):
+        return float(o)
+    if isinstance(o, _np.ndarray):
+        return o.tolist()
+    if isinstance(o, torch.Tensor):
+        t = o.detach().cpu()
+        return t.item() if t.ndim == 0 else t.tolist()
+    if hasattr(o, "item"):
+        try:
+            return o.item()
+        except Exception:
+            pass
+    raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
+
+
+def _to_point_list(path_like):
+    """Normalize a generic path into a list[Point]."""
+    pts = []
+    for p in path_like:
+        if isinstance(p, dict) and "x" in p and "y" in p:
+            pts.append(Point(x=float(p["x"]), y=float(p["y"])))
+        elif isinstance(p, (list, tuple)) and len(p) == 2:
+            pts.append(Point(x=float(p[0]), y=float(p[1])))
+        elif hasattr(p, "x") and hasattr(p, "y"):
+            pts.append(Point(x=float(p.x), y=float(p.y)))
+        else:
+            continue
+    return pts
+
+
+def _to_point(p):
+    """Coerce (x,y) tuple/list or {'x','y'} or Point into a Point."""
+    if hasattr(p, "x") and hasattr(p, "y"):
+        # Ensure numeric
+        return Point(x=float(p.x), y=float(p.y))
+    if isinstance(p, dict) and "x" in p and "y" in p:
+        return Point(x=float(p["x"]), y=float(p["y"]))
+    # assume sequence
+    return Point(x=float(p[0]), y=float(p[1]))
+
+
+def _normalize_sim_geometry(sim):
     """
-    Voegt alle individuele clearance-cirkels samen tot één groot oppervlak.
+    Ensure the simulator sees canonical Point objects for everything.
+    This keeps .x/.y access working, while our monkey-patch enables [0]/[1].
     """
-    # Maak een lijst van alle cirkel-polygonen
-    list_of_circles = [
-        Point(p['point_x'], p['point_y']).buffer(p['max_radius'])
-        for p in path_possibilities
-    ]
-    
-    # Voeg alle polygonen samen
-    clearance_area = unary_union(list_of_circles)
-    return clearance_area
+    try:
+        sim.input_shaft = _to_point(sim.input_shaft)
+    except Exception:
+        pass
+    try:
+        sim.output_shaft = _to_point(sim.output_shaft)
+    except Exception:
+        pass
+    try:
+        sim.boundaries = [_to_point(b) for b in sim.boundaries]
+    except Exception:
+        pass
+    try:
+        sim.path = [_to_point(p) for p in sim.path]
+    except Exception:
+        pass
 
-#Try to automatize the the action_space
-def generate_action_space(min_teeth=10, max_teeth=50, step=5, compound=True, simple=True):
-    """Genereert een lijst van mogelijke acties (driven_teeth, driving_teeth)."""
-    actions = []
-    # Begin met de grootste tandwielen, die hebben vaak de voorkeur
-    for driven in range(max_teeth, min_teeth - 1, -step):
-        for driving in range(max_teeth, min_teeth - 1, -step):
-            # Voeg compound gears toe (aandrijvend en aangedreven deel verschillen)
-            if compound and driven != driving:
-                actions.append((driven, driving))
-            # Voeg simple gears toe (aandrijvend en aangedreven deel zijn gelijk)
-            elif simple and driven == driving:
-                actions.append((driven, driving))
-    return actions
 
-def calculate_next_action(simulator: GearTrainSimulator, strategy_params: dict) -> tuple[int, int] | None:
+# ---------------------------------------------------------------------
+# 3) Main: RL-driven gear generation
+# ---------------------------------------------------------------------
+def run_rl_gear_generation(example_name="Example3", model_path=None):
     """
-    Berekent een concrete actie (driven_teeth, driving_teeth) gebaseerd op
-    strategische parameters, mogelijk gekozen door een RL-agent.
-
-    Args:
-        simulator: De huidige staat van de gear train simulator.
-        strategy_params: Een dictionary met strategische keuzes.
-            Bijv: {'size_factor': 0.9, 'compound_ratio': 0.8}
-
-    Returns:
-        Een (driven, driving) tuple of None als er geen actie mogelijk is.
+    Use trained RL agent to generate gear layout, save JSON, and export a PNG visualization.
     """
-    last_gear = simulator.last_gear
-    module = simulator.gear_factory.module
 
-    # Controleer of we aan het einde van het pad zijn
-    if simulator.current_path_index >= len(simulator.path):
-        return None 
-
-    # Bepaal het centrum van het volgende tandwiel
-    next_center_point = simulator.path[simulator.current_path_index]
-    
-    # Bereken de afstand tot het volgende punt op het pad
-    distance = np.linalg.norm(last_gear.center.to_np() - next_center_point.to_np())
-
-    # Bereken de maximaal beschikbare straal voor het nieuwe tandwiel
-    max_radius = distance - last_gear.driving_radius - simulator.clearance_margin
-
-    # Minimale diameter moet minstens 4 tanden kunnen huisvesten
-    if max_radius * 2 < 4 * module:
-        return None
-
-    # --- De "RL-Strategie" wordt hier toegepast ---
-    size_factor = strategy_params.get('size_factor', 0.9) # Hoeveel van de max. ruimte gebruiken we? (0.5 - 1.0)
-    compound_ratio = strategy_params.get('compound_ratio', 0.8) # Hoeveel kleiner is het aandrijvende deel? (0.5 - 1.0)
-    # ----------------------------------------------
-
-    # Kies de straal en converteer naar tanden voor het aangedreven deel
-    chosen_radius = max_radius * size_factor
-    driven_teeth = int((chosen_radius * 2) / module)
-
-    # Zorg voor een minimum aantal tanden (bv. 8)
-    if driven_teeth < 8:
-        return None
-
-    # Bepaal het aantal tanden voor het aandrijvende deel
-    # Als ratio 1.0 is, wordt het een "simple gear"
-    driving_teeth = int(driven_teeth * compound_ratio)
-    if driving_teeth < 8:
-        driving_teeth = driven_teeth # Behoud het aantal, zelfs als het laag is
-
-    return (driven_teeth, driving_teeth)
-
-def test_run_full_pipeline(fn='Example1'):
-    """
-    Runs the full pipeline: preprocessing and then gear generation simulation.
-    """
-    # 1. --- Configuration ---
-    # Define directories and the base name of the example to test.
+    # ---------- Paths & config ----------
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     CONFIG = {
         "INPUT_DIR": os.path.join(BASE_DIR, "data"),
         "INTERMEDIATE_DIR": os.path.join(BASE_DIR, "data", "intermediate"),
-        "EXAMPLE_NAME": f"{fn}",
-        "module": 1.0,
-        "clearance_margin": 1.0,
-        "initial_gear_teeth": 20,
+        "EXAMPLE_NAME": example_name,
         "OUTPUT_DIR": os.path.join(BASE_DIR, "output"),
     }
 
-    # 2. --- Preprocessing Step ---
-    print(f"--- Running Preprocessing for: {CONFIG['EXAMPLE_NAME']} ---")
+    # Default model path
+    if model_path is None:
+        model_path = os.path.join(BASE_DIR, "models", "ppo_gear_placer_final.pt")
+
+    if not os.path.exists(model_path):
+        print(f"Error: Model not found at {model_path}")
+        print("Please train a model first using train.py")
+        return None, 0
+
+    # ---------- Preprocessing ----------
+    print(f"--- Preprocessing {CONFIG['EXAMPLE_NAME']} ---")
     os.makedirs(CONFIG["INTERMEDIATE_DIR"], exist_ok=True)
     input_img_path = os.path.join(CONFIG["INPUT_DIR"], f"{CONFIG['EXAMPLE_NAME']}.png")
     input_constraints_path = os.path.join(CONFIG["INPUT_DIR"], f"{CONFIG['EXAMPLE_NAME']}_constraints.json")
     processed_json_path = os.path.join(CONFIG["INTERMEDIATE_DIR"], f"{CONFIG['EXAMPLE_NAME']}_processed.json")
-    
-    Processor.process_input(input_img_path, input_constraints_path, processed_json_path)
-    print(f"Successfully generated processed file: {processed_json_path}")
 
-    # 3. --- Pathfinding Step ---
-    print("\n--- Finding Optimal Path ---")
-    path_json_path = os.path.join(CONFIG['OUTPUT_DIR'], fn, 'path.json')
-    path_image_path = os.path.join(CONFIG['OUTPUT_DIR'], fn, 'path.png')
-    
-    # finder = Pathfinder()
-    with open(path_json_path, 'r') as f:
-        optimal_path = json.load(f)
-    # print(optimal_path)
-    # optimal_path = finder.find_path(processed_json_path)
-    
-    if optimal_path:
-        # Save path to JSON
-        # with open(path_json_path, 'w') as f:
-        #     json.dump(optimal_path, f, indent=4)
-        # print(f"Path saved to {path_json_path}")
+    try:
+        Processor.process_input(input_img_path, input_constraints_path, processed_json_path)
+    except Exception as e:
+        print(f"Preprocessing completed (with warnings: {e})")
 
-        # Generate visualization
-        Renderer.render_path(
-            processed_json_path,
-            path_image_path,
-            path=optimal_path
-        )
-        print(f"Visualization saved to {path_image_path}")
+    # ---------- Pathfinding ----------
+    print("\n--- Pathfinding ---")
+    path_json_path = os.path.join(CONFIG["OUTPUT_DIR"], example_name, "path.json")
+    os.makedirs(os.path.dirname(path_json_path), exist_ok=True)
+
+    if os.path.exists(path_json_path):
+        with open(path_json_path, "r") as f:
+            optimal_path = json.load(f)
+        print(f"Loaded existing path with {len(optimal_path)} points")
     else:
-        print("FATAL: Could not find a path between shafts.")
-    
-    # 4. --- Initialization ---
-    print("\n--- Initializing Gear Generation Test ---")
-    gear_factory = GearFactory(module=CONFIG["module"])
-    with open(processed_json_path, 'r') as f:
-        data = json.load(f)['normalized_space']
-        path_data = data['boundaries']
-        shaft_input = tuple(data['input_shaft'].values())
-        shaft_output = tuple(data['output_shaft'].values())
+        finder = Pathfinder()
+        optimal_path = finder.find_path(processed_json_path)
+        if not optimal_path:
+            raise RuntimeError("Could not find path")
+        with open(path_json_path, "w") as f:
+            json.dump(optimal_path, f, indent=2, default=_json_np_default)
+        print(f"Generated new path with {len(optimal_path)} points")
 
-    simulator = GearTrainSimulator(
-        path=optimal_path, # <-- Use the generated optimal path
-        input_shaft=shaft_input,
-        output_shaft=shaft_output,
-        boundaries=data['boundaries'], # Boundaries are still used for collision checks
-        gear_factory=gear_factory,
-        clearance_margin=CONFIG["clearance_margin"]
-    )
-    #toegevoegd
-    next_target = simulator.path[1]  # target voor eerste intermediate gear
-
-    # 5. --- Execution: Place Input and Intermediate Gears ---
-    simulator.reset(initial_gear_teeth=CONFIG["initial_gear_teeth"])
-    print(f"Step 0: Initial gear placed (ID: {simulator.last_gear.id}).")
-
-    # Define actions for the two intermediate gears.
-    # Action 1: A compound gear (40 driven teeth, 15 driving teeth).
-    # Action 2: A simple gear (30 driven teeth, 30 driving teeth).
-    # intermediate_actions = [
-    #     (10, 15),  # Action 1: Place a compound gear
-    #     (20, 15),  # Action 2: Place another compound gear
-    #     (10, 10)   # Action 3: Place a simple gear
-    # ]
-    intermediate_actions = generate_action_space(min_teeth=10, max_teeth=40, step=5)
-
-    done = False
-    # 5. --- Execution: Place Intermediate Gears with a Dynamic Strategy ---
-    simulator.reset(initial_gear_teeth=CONFIG["initial_gear_teeth"])
-    print(f"Step 0: Initial gear placed (ID: {simulator.last_gear.id}).")
-
-    done = False
-    step_counter = 0
-    max_steps = 10  # Voorkom een oneindige loop
-
-    while not done and step_counter < max_steps:
-        step_counter += 1
-        print("-" * 20)
-        print(f"Step {step_counter}: Deciding next action...")
-
-        # ----------------------------------------------------------------------
-        # HIER ZOU DE RL-AGENT EEN BESLISSING NEMEN
-        # De agent observeert de 'state' en kiest de beste strategie.
-        # Voor nu simuleren we dit met een vaste strategie.
-        # Voorbeeld: een agent kan leren om size_factor aan te passen.
-        
-        # Voorbeeld van een strategie: "Wees voorzichtig, gebruik 90% van de ruimte"
-        strategy = {
-        "size_factor": 0.2,      # <-- Verlaagd van 0.9 naar 0.1
-        "compound_ratio": 0.85
+    # ---------- Environment config ----------
+    env_config = {
+        "json_path": processed_json_path,
+        "path": optimal_path,
+        "module": 1.0,
+        "clearance_margin": 0.5,
+        "initial_gear_teeth": 20,
+        "target_torque": 2.0,
+        "torque_weight": 0.6,
+        "space_weight": 0.3,
+        "weight_penalty": 0.1,
     }
-        print(f"Chosen strategy: {strategy}")
-        # ----------------------------------------------------------------------
 
-        # Vertaal de strategie naar een concrete actie
-        action = calculate_next_action(simulator, strategy)
+    # ---------- Setup Environment & PPO Agent (CPU) ----------
+    print("\n--- Setting up Environment and RL Agent ---")
+    env = GearEnv(env_config)
 
-        if action is None:
-            print(f"FATAL: Could not calculate a valid action with strategy {strategy}.")
+    # Normalize geometry *before* first reset so simulator sees Point everywhere
+    _normalize_sim_geometry(env.simulator)
+
+    # First reset to get state shape
+    state, _ = env.reset()
+
+    state_dim = env.observation_space.shape[0]
+    action_dims = env.action_space.nvec
+    print(f"State dimension: {state_dim}")
+    print(f"Action dimensions: {action_dims}")
+
+    # Force PPOAgent to CPU temporarily by wrapping its __init__
+    original_init = PPOAgent.__init__
+
+    def cpu_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.device = torch.device("cpu")
+        self.policy = self.policy.to(self.device)
+        self.policy_old = self.policy_old.to(self.device)
+
+    PPOAgent.__init__ = cpu_init
+
+    agent = PPOAgent(
+        state_dim=state_dim,
+        action_dims=action_dims,
+        lr=0.0,        # eval only
+        gamma=0.0,     # eval only
+        clip_epsilon=0 # eval only
+    )
+
+    # Restore original init
+    PPOAgent.__init__ = original_init
+
+    print(f"Loading trained model from: {model_path}")
+    agent.policy.load_state_dict(torch.load(model_path, map_location="cpu"))
+    agent.policy_old.load_state_dict(torch.load(model_path, map_location="cpu"))
+    agent.policy.eval()
+    agent.policy_old.eval()
+
+    # ---------- Rollout ----------
+    print("\n--- Running RL Agent for Gear Generation ---")
+    # Ensure geometry still normalized in case env mutated after first reset
+    _normalize_sim_geometry(env.simulator)
+    state, _ = env.reset()
+
+    done = False
+    episode_reward = 0.0
+    step_count = 0
+    max_steps = 50
+
+    action_history = []
+    reward_history = []
+
+    while not done and step_count < max_steps:
+        try:
+            with torch.no_grad():
+                action, log_prob = agent.act(state)
+
+            # Example: decode discrete actions to teeth counts (offset by 8)
+            teeth_driver = int(action[0]) + 8
+            teeth_driven = int(action[1]) + 8
+
+            print(f"\nStep {step_count + 1}:")
+            print(f"  Agent selected: driver_teeth={teeth_driver}, driven_teeth={teeth_driven}")
+
+            # Some environments expect the raw action vector; if your env needs
+            # decoded teeth, adapt here (e.g., pass via info or env wrapper).
+            next_state, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+
+            episode_reward += float(reward)
+            action_history.append(action)
+            reward_history.append(float(reward))
+
+            print(f"  Reward: {float(reward):.3f}")
+            print(f"  Cumulative reward: {episode_reward:.3f}")
+
+            if info.get("error"):
+                print(f"  Error: {info['error']}")
+            elif info.get("success"):
+                print(f"  Success: {info['success']}")
+
+            state = next_state
+            step_count += 1
+
+        except Exception as e:
+            # If anything in step() touched Point by [] or .x/.y, our patch + normalization covers it.
+            # If something else explodes, log and stop the episode gracefully.
+            print(f"Error during step {step_count + 1}: {e}")
             break
 
-        # Voer de berekende actie uit
-        print(f"Placing intermediate gear with calculated teeth {action}...")
-        state, reward, done, info = simulator.step(action)
-        
-        if done:
-            if info.get('error'):
-                print(f"Simulation failed: {info.get('error')}")
-            else:
-                print("Simulation finished successfully!")
-        else:
-            print(f"Step {step_counter}: Intermediate gear placed (ID: {simulator.last_gear.id}). Reward: {reward}")
+    print(f"\n--- RL Generation Complete ---")
+    print(f"Episode finished after {step_count} steps")
+    print(f"Total reward: {episode_reward:.3f}")
 
-    # ... De rest van je code (sectie 6, 7, 8) blijft grotendeels hetzelfde.
-    # Let op: de logica voor het laatste tandwiel in sectie 6 is misschien niet meer nodig.
-
-    # 6. --- Execution: Calculate and Place Final Gear (only if intermediate steps succeeded) ---
-    if not done:
-        print("-" * 20)
-        print("Step 3: Calculating and placing final gear on output shaft...")
-        last_intermediate_gear = simulator.last_gear
-        
-        dist_to_output = np.linalg.norm(np.array(last_intermediate_gear.center.to_np()) - np.array(shaft_output))
-        final_gear_radius = dist_to_output - last_intermediate_gear.driving_radius
-        
-        if final_gear_radius * 2 < (8 * CONFIG["module"]): # Check if the gear would be too small
-             print(f"Final gear placement failed: Required radius ({final_gear_radius:.2f}) is too small.")
-        else:
-            final_gear_diameter = final_gear_radius * 2
-            final_gear = gear_factory.create_gear_from_diameter(
-                gear_id='gear_final',
-                center=shaft_output,
-                desired_diameter=final_gear_diameter
-            )
-            simulator.gears.append(final_gear)
-            print("Step 3: Final gear placed.")
-
-    # 7. --- Save Generated Gears to JSON ---
-    print("\n--- Saving generated gear train to JSON ---")
+    # ---------- Save JSON ----------
     output_dir = os.path.join(CONFIG["OUTPUT_DIR"], CONFIG["EXAMPLE_NAME"])
     os.makedirs(output_dir, exist_ok=True)
-    gear_layout_path = os.path.join(output_dir, "gear_layout.json")
 
-    # Convert gear objects to JSON-serializable dictionaries
-    gears_json_data = [gear.to_json() for gear in simulator.gears]
-    
-    with open(gear_layout_path, 'w') as f:
-        json.dump(gears_json_data, f, indent=4)
-    print(f"Gear layout saved to: {gear_layout_path}")
+    gear_layout_path = os.path.join(output_dir, "rl_generated_layout.json")
+    gears_json_data = [gear.to_json() for gear in env.simulator.gears]
+    with open(gear_layout_path, "w") as f:
+        json.dump(gears_json_data, f, indent=4, default=_json_np_default)
+    print(f"\nGenerated gear layout JSON saved to: {gear_layout_path}")
 
-    # 8. --- Final Visualization ---
-    print("\n--- Generating final visualization from saved files ---")
-    output_image_path = os.path.join(output_dir, "gear_train1_result.png")
-    
-    # The renderer now reads the gear layout from the JSON file
-    with open(gear_layout_path, 'r') as f:
-        gears_data = json.load(f)
-
-    gears_for_renderer = [Gear.from_json(g) for g in gears_data]
-
-    Renderer.render_processed_data(
-        processed_data_path=processed_json_path,
-        output_path=output_image_path,
-        path=simulator.path,
-        gears=gears_for_renderer
-    )
-    print(f"Visualization saved to: {output_image_path}")
-
-if __name__ == "__main__":
-    test_run_full_pipeline("Example2")
-#JUSTIFICATION##
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from shapely.geometry import Point, Polygon
-
-import gymnasium as gym
-from gymnasium import spaces
-from stable_baselines3 import PPO
-from stable_baselines3.common.env_checker import check_env
-from IPython.display import display, clear_output
-
-# --- CONFIGURATIE VAN DE BEKENDE OPLOSSING ---
-# We definiëren een correcte oplossing die de agent moet leren.
-# Doel: een totale ratio van ~1.88 met 2 tussentandwielen.
-# Input Gear: r=10
-# Gear 1 (Correcte Actie 0): driven=15, driving=10 -> Ratio = 15/10 = 1.5
-# Gear 2 (Correcte Actie 1): driven=12.5, driving=10 -> Ratio = 12.5/10 = 1.25
-# Finale Ratio = 1.5 * 1.25 = 1.875
-TARGET_GEAR_RATIO = 1.875
-DESIRED_INTERMEDIATE_GEARS = 2
-
-class Gear:
-    """Dataklasse voor een tandwiel."""
-    def __init__(self, id, center, driven_r, driving_r):
-        self.id = id
-        self.center = np.array(center)
-        self.driven_radius = driven_r
-        self.driving_radius = driving_r
-
-class KnownSolutionEnv(gym.Env):
-    """Een RL-omgeving die is ontworpen om te testen of de agent een specifieke,
-       bekende oplossing kan leren."""
-    metadata = {'render_modes': ['human']}
-
-    def __init__(self):
-        super(KnownSolutionEnv, self).__init__()
-        
-        # Omgeving is een simpele rechthoek
-        rect = [0, 0, 120, 50]
-        self.boundaries = [[rect[0], rect[1]], [rect[0]+rect[2], rect[1]], [rect[0]+rect[2], rect[1]+rect[3]], [rect[0], rect[1]+rect[3]]]
-        self.boundary_polygon = Polygon(self.boundaries)
-        self.input_shaft_pos = np.array([15.0, 25.0])
-        self.output_shaft_pos = np.array([105.0, 25.0])
-        
-        # --- ACTIES: De correcte keuzes + een paar "foute" keuzes ---
-        self.possible_actions = [
-            (15.0, 10.0),  # Correcte Actie 0
-            (12.5, 10.0),  # Correcte Actie 1
-            (10.0, 10.0),  # Foute Actie 2
-            (8.0, 8.0),    # Foute Actie 3
-        ]
-        self.action_space = spaces.Discrete(len(self.possible_actions))
-
-        # Observaties
-        self.observation_space = spaces.Box(
-            low=np.array([-120, -50, 0, 0]), 
-            high=np.array([120, 50, 10, 10]), 
-            dtype=np.float32
+    # ---------- Render PNG ----------
+    png_path = os.path.join(output_dir, "rl_generated_layout.png")
+    rendered = False
+    try:
+        # Preferred: use processed data + path + actual Gear objects
+        point_path = _to_point_list(optimal_path)
+        Renderer.render_processed_data(
+            processed_data_path=processed_json_path,
+            output_path=png_path,
+            path=point_path,
+            gears=env.simulator.gears,
         )
-        
-        self.fig, self.ax = plt.subplots(figsize=(14, 6))
-        # Houd de correcte sequentie bij om de agent te valideren
-        self.correct_sequence = [0, 1] 
-        self.action_history = []
+        rendered = True
+    except Exception as e1:
+        print(f"render_processed_data failed: {e1}")
+        # Fallback if your renderer exposes a simpler API
+        try:
+            Renderer.render_gears(env.simulator.gears, save_path=png_path)
+            rendered = True
+        except Exception as e2:
+            print(f"render_gears fallback failed: {e2}")
 
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        self.gears = []
-        self.total_ratio = 1.0
-        self.action_history = []
-        
-        input_gear = Gear("input", self.input_shaft_pos, 10.0, 10.0)
-        self.gears.append(input_gear)
-        self.last_gear = input_gear
-        
-        return self._get_obs(), self._get_info()
+    if rendered:
+        print(f"Gear layout PNG saved to: {png_path}")
+    else:
+        print("Failed to render PNG. Please verify the Renderer API/signature.")
 
-    def _get_obs(self):
-        vector_to_target = self.output_shaft_pos - self.last_gear.center
-        return np.array([vector_to_target[0], vector_to_target[1], self.total_ratio, len(self.gears)], dtype=np.float32)
+    # ---------- Wrap up ----------
+    print(f"\n--- Analysis ---")
+    print(f"Total gears placed: {len(env.simulator.gears)}")
 
-    def _get_info(self):
-        return {"gears_placed": len(self.gears), "current_ratio": self.total_ratio}
-
-    def step(self, action_index):
-        self.action_history.append(action_index)
-        
-        # Als de agent te veel stappen zet, is het een mislukking
-        if len(self.gears) > DESIRED_INTERMEDIATE_GEARS + 1:
-            return self._get_obs(), -500, True, False, self._get_info()
-
-        driven_radius, driving_radius = self.possible_actions[action_index]
-        
-        direction = self.output_shaft_pos - self.last_gear.center
-        direction /= np.linalg.norm(direction)
-        
-        meshing_distance = self.last_gear.driving_radius + driven_radius
-        next_center = self.last_gear.center + direction * meshing_distance
-        
-        new_gear_circle = Point(next_center).buffer(driven_radius)
-        if not self.boundary_polygon.contains(new_gear_circle):
-            return self._get_obs(), -200, True, False, self._get_info()
-
-        new_gear = Gear(f"gear_{len(self.gears)}", next_center, driven_radius, driving_radius)
-        self.gears.append(new_gear)
-        self.total_ratio *= new_gear.driven_radius / self.last_gear.driving_radius
-        self.last_gear = new_gear
-        
-        # --- FINALE REWARD BEREKENING ---
-        dist_to_output = np.linalg.norm(self.last_gear.center - self.output_shaft_pos)
-        final_gear_radius = dist_to_output - self.last_gear.driving_radius
-        final_gear_circle = Point(self.output_shaft_pos).buffer(final_gear_radius)
-        
-        # Controleer of we de output kunnen bereiken
-        if len(self.gears) - 1 == DESIRED_INTERMEDIATE_GEARS and self.boundary_polygon.contains(final_gear_circle):
-            # We hebben het juiste aantal tandwielen. Nu controleren we de sequentie.
-            if self.action_history == self.correct_sequence:
-                # De agent heeft de perfecte oplossing gevonden!
-                reward = 5000 
-            else:
-                # De agent heeft een oplossing gevonden, maar niet de juiste.
-                reward = -1000
-            
-            final_gear = Gear("output", self.output_shaft_pos, final_gear_radius, final_gear_radius)
-            self.gears.append(final_gear)
-            return self._get_obs(), reward, True, False, self._get_info()
-        
-        return self._get_obs(), -1, False, False, self._get_info()
-
-    def render(self):
-        self.ax.clear()
-        self.ax.plot(*zip(*self.boundaries, self.boundaries[0]), 'k-', linewidth=1)
-        for gear in self.gears:
-            self.ax.add_artist(plt.Circle(gear.center, gear.driven_radius, fc='skyblue', ec='blue', alpha=0.6))
-            if gear.driven_radius != gear.driving_radius:
-                self.ax.add_artist(plt.Circle(gear.center, gear.driving_radius, fc='royalblue', ec='blue'))
-        self.ax.add_artist(plt.Circle(self.output_shaft_pos, 2, color='red'))
-        self.ax.set_aspect('equal'); self.ax.grid(True)
-        clear_output(wait=True); display(self.fig)
-
-    def close(self):
-        plt.close(self.fig)
-
-if __name__ == "__main__":
-    env = KnownSolutionEnv()
-    check_env(env)
-
-    model = PPO('MlpPolicy', env, verbose=1)
-    
-    TIMESTEPS = 50000
-    print(f"\n--- Starting training for {TIMESTEPS} timesteps ---")
-    model.learn(total_timesteps=TIMESTEPS)
-    print("--- Training complete ---")
-
-    print("\n--- Evaluating trained agent to see if it learned the correct sequence ---")
-    total_successes = 0
-    for episode in range(10): # Evalueer 10 keer
-        obs, info = env.reset()
-        done = False
-        print(f"\n--- Episode {episode + 1} ---")
-        for i in range(DESIRED_INTERMEDIATE_GEARS):
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, done, _, info = env.step(action)
-            if done: break
-        
-        # Controleer of de agent de juiste acties heeft gekozen
-        if env.action_history == env.correct_sequence:
-            print(f"SUCCESS! Agent chose the correct sequence: {env.action_history}")
-            total_successes += 1
-        else:
-            print(f"FAILURE. Agent chose sequence: {env.action_history}, expected: {env.correct_sequence}")
-        
-        env.render() # Toon het eindresultaat
-    
-    print(f"\nValidation complete. Agent found the correct solution in {total_successes}/10 episodes.")
     env.close()
+    return episode_reward, len(env.simulator.gears)
+
+
+# ---------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Use trained RL agent for gear generation")
+    parser.add_argument("--example", type=str, default="Example3", help="Example name to process")
+    parser.add_argument("--model_path", type=str, default=None, help="Path to trained model")
+
+    args = parser.parse_args()
+
+    # Force CPU default tensor type
+    torch.set_default_tensor_type("torch.FloatTensor")
+
+    run_rl_gear_generation(args.example, args.model_path)

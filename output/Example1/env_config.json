@@ -1,0 +1,20 @@
+{
+  "json_path": "c:\\Users\\Mmdocks\\Desktop\\CODE\\GearboxRL\\GearRL\\data\\intermediate\\Example1_processed.json",
+  "path": [
+    [
+      36.30761873229591,
+      1.5261878246096288
+    ],
+    [
+      -32.082486095074614,
+      11.056672150299214
+    ]
+  ],
+  "module": 1.0,
+  "clearance_margin": 0.5,
+  "initial_gear_teeth": 20,
+  "target_torque": 2.0,
+  "torque_weight": 0.6,
+  "space_weight": 0.3,
+  "weight_penalty": 0.1
+}

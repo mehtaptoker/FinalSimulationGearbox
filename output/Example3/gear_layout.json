@@ -1,48 +1,146 @@
-[
-    {
-        "id": "gear_input",
-        "center": {
-            "x": 33.98959541635908,
-            "y": 0.11494252873563227
+{
+    "metadata": {
+        "config": {
+            "INPUT_DIR": "c:\\Users\\Mmdocks\\Desktop\\CODE\\GearboxRL\\GearRL\\data",
+            "INTERMEDIATE_DIR": "c:\\Users\\Mmdocks\\Desktop\\CODE\\GearboxRL\\GearRL\\data\\intermediate",
+            "EXAMPLE_NAME": "Example3",
+            "module": 1.0,
+            "clearance_margin": 1.5,
+            "initial_gear_teeth": 20,
+            "OUTPUT_DIR": "c:\\Users\\Mmdocks\\Desktop\\CODE\\GearboxRL\\GearRL\\output",
+            "enable_validation": true,
+            "max_retry_attempts": 3,
+            "adaptive_strategies": true
         },
-        "teeth_count": [
-            30
-        ],
-        "module": 1.0
+        "placement_stats": {
+            "attempts": 265,
+            "successes": 9,
+            "failures": 0
+        },
+        "path_points": 258,
+        "final_gear_count": 11
     },
-    {
-        "id": "gear_1",
-        "center": {
-            "x": 31.57098900844793,
-            "y": 3.932303542925538
+    "gears": [
+        {
+            "id": "gear_input",
+            "center": {
+                "x": 33.98959541635908,
+                "y": 0.11494252873563227
+            },
+            "teeth_count": [
+                29
+            ],
+            "module": 1.0
         },
-        "teeth_count": [
-            10,
-            15
-        ],
-        "module": 1.0
-    },
-    {
-        "id": "gear_2",
-        "center": {
-            "x": 31.680920752166024,
-            "y": 4.032440265826354
+        {
+            "id": "gear_1",
+            "center": {
+                "x": 31.802163990215675,
+                "y": 3.9577225588279683
+            },
+            "teeth_count": [
+                8
+            ],
+            "module": 1.0
         },
-        "teeth_count": [
-            20,
-            15
-        ],
-        "module": 1.0
-    },
-    {
-        "id": "gear_output",
-        "center": {
-            "x": -33.53421420131056,
-            "y": 4.6557095284133645
+        {
+            "id": "gear_2",
+            "center": {
+                "x": 31.58886195312021,
+                "y": 3.867658210722188
+            },
+            "teeth_count": [
+                8
+            ],
+            "module": 1.0
         },
-        "teeth_count": [
-            31
-        ],
-        "module": 1.0
-    }
-]
+        {
+            "id": "gear_3",
+            "center": {
+                "x": 31.517763991677345,
+                "y": 3.829396944267631
+            },
+            "teeth_count": [
+                8
+            ],
+            "module": 1.0
+        },
+        {
+            "id": "gear_4",
+            "center": {
+                "x": 31.521671636470384,
+                "y": 3.9428698880675177
+            },
+            "teeth_count": [
+                8
+            ],
+            "module": 1.0
+        },
+        {
+            "id": "gear_5",
+            "center": {
+                "x": 31.539625517562136,
+                "y": 3.9409915553038277
+            },
+            "teeth_count": [
+                8
+            ],
+            "module": 1.0
+        },
+        {
+            "id": "gear_6",
+            "center": {
+                "x": 26.062297322017272,
+                "y": 7.3525501253370695
+            },
+            "teeth_count": [
+                8
+            ],
+            "module": 1.0
+        },
+        {
+            "id": "gear_7",
+            "center": {
+                "x": 19.038793816408948,
+                "y": 11.010782516543493
+            },
+            "teeth_count": [
+                8
+            ],
+            "module": 1.0
+        },
+        {
+            "id": "gear_8",
+            "center": {
+                "x": 11.313716379711805,
+                "y": 13.090007996628005
+            },
+            "teeth_count": [
+                8
+            ],
+            "module": 1.0
+        },
+        {
+            "id": "gear_9",
+            "center": {
+                "x": 3.5886389430146615,
+                "y": 15.169233476712519
+            },
+            "teeth_count": [
+                8
+            ],
+            "module": 1.0
+        },
+        {
+            "id": "gear_output",
+            "center": {
+                "x": -33.53421420131056,
+                "y": 4.6557095284133645
+            },
+            "teeth_count": [
+                30
+            ],
+            "module": 1.0
+        }
+    ]
+}
